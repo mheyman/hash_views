@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+# Build Artifacts
+out
+.vs/*
+!.vs/launch.vs.json
+*.*~

@@ -1,0 +1,13 @@
+{
+  "name": "hash-stream",
+  "version-semver": "1.0.0",
+  "dependencies": [
+    "libsodium"
+  ],
+  "features": {
+    "tests": {
+      "description": "Build tests",
+      "dependencies": [ "doctest", "fmt" ]
+    }
+  }
+}
