@@ -15,7 +15,7 @@ namespace sph::ranges::views::detail
             uint8_t ret{ buf_[i] };
             buf_[i] = v;
             ++end_;
-            return position > buf_.size() ? std::optional<uint8_t>{} : ret;
+            return end_ > buf_.size() ? std::optional<uint8_t>{} : ret;
         }
         auto next() -> std::tuple<bool, uint8_t>
         {
@@ -58,7 +58,7 @@ namespace sph::ranges::views::detail
             if (end_ - data_end_ > buf_.size())
             {
                 throw std::runtime_error(std::format("Truncated data or bad element size. Cannot fit at least {} {}-sized elements along with at least {} bytes of hash in {} bytes.",
-                    (data_end_ / element_size) + 1, sizeof(T), target_hash_size, end_));
+                    (data_end_ / sizeof(T)) + 1, sizeof(T), target_hash_size, end_));
             }
 
             data_current_ = end_ > buf_.size() ? end_ - buf_.size() : 0;

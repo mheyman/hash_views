@@ -3,9 +3,9 @@
 namespace sph
 {
     template<hash_algorithm A>
-    class hash_param
+    struct hash_param
     {
-        static constexpr auto get_hash_size() -> size_t
+        static constexpr auto hash_size() -> size_t
         {
             if constexpr (A == hash_algorithm::sha256)
             {
@@ -25,7 +25,7 @@ namespace sph
             }
         }
 
-        static constexpr auto get_hash_chunk_size() -> size_t
+        static constexpr auto chunk_size() -> size_t
         {
             if constexpr (A == hash_algorithm::sha256)
             {
@@ -45,7 +45,7 @@ namespace sph
             }
         }
 
-        static constexpr auto get_type_name() -> std::string_view
+        static constexpr auto name() -> std::string_view
         {
             if constexpr (A == hash_algorithm::sha256)
             {
@@ -64,20 +64,5 @@ namespace sph
                 throw std::invalid_argument("Unsupported hash algorithm");
             }
         }
-    public:
-        /**
-         * Maximum number of uint8_t elements in a hash.
-         */
-        static constexpr auto hash_size { hash_param::get_hash_size()};
-
-        /**
-         * How many bytes in a chunk of data to hash at a time.
-         */
-        static constexpr auto hash_chunk_size{ hash_param::get_hash_chunk_size() };
-
-        /**
-         * Text name of the hash algorithm.
-         */
-        static constexpr auto type_name { hash_param::get_type_name()};
     };
 }

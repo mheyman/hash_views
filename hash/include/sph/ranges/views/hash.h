@@ -13,7 +13,7 @@ namespace sph::ranges::views
     namespace detail
     {
         /**
-         * @brief A view that encodes binary data into zstd-compressed data.
+         * @brief A view that encodes binary data into hashed data.
          * @tparam R The type of the range that holds a hashed stream.
          * @tparam T The output type.
          * @tparam A The hash algorithm to use.
@@ -25,8 +25,8 @@ namespace sph::ranges::views
             R input_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
             size_t target_hash_size_;
         public:
-            using iterator = detail::iterator<R, T, A, S>;
-            using sentinel = detail::sentinel<R, T, A, S>;
+            using iterator = detail::hash_iterator<R, T, A, S, detail::iterate_style::no_appended_hash>;
+            using sentinel = detail::hash_sentinel<R, T, A, S, detail::iterate_style::no_appended_hash>;
 
             /**
              * Initialize a new instance of the hash_view class.
@@ -56,8 +56,8 @@ namespace sph::ranges::views
         hash_view(R&&) -> hash_view<R, T, A, S>;
 
         /**
-         * Functor that, given a range, provides a zstd compressed view of that range.
-         * @tparam T The type to compress into.
+         * Functor that, given a range, provides a hashed view of that range.
+         * @tparam T The type to hash into.
          */
         template <typename T, sph::hash_algorithm A, sph::hash_style S>
         class hash_fn : public std::ranges::range_adaptor_closure<hash_fn<T, A, S>>

@@ -1,0 +1,212 @@
+#pragma once
+#include <array>
+#include <sodium/crypto_hash_sha512.h>
+#include <sph/hash_algorithm.h>
+#include <sph/hash_param.h>
+#include <sph/hash_style.h>
+#include <sph/ranges/views/detail/get_target_hash_size.h>
+#include <sph/ranges/views/detail/process_util.h>
+#include <tuple>
+#include <type_traits>
+namespace sph::ranges::views::detail
+{
+    template<typename O, sph::hash_style S>
+    class sha512
+    {
+        static constexpr bool return_inputs{ S == sph::hash_style::append };
+        static constexpr bool single_byte{ sizeof(O) == 1 };
+        size_t target_hash_size_;
+        crypto_hash_sha256_state state_;
+        std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::hash_size()> hash_;
+        std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::hash_size()>::iterator hash_current_{ hash_.begin() };
+        std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::chunk_size()> chunk_;
+        std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::chunk_size()>::iterator chunk_current_{ chunk_.begin() };
+        struct empty {};
+        using value_t = std::conditional_t<single_byte, empty, O>;
+        using value_buf_t = std::conditional_t<single_byte, empty, std::array<uint8_t, sizeof(O)>>;
+        using value_buf_current_t = std::conditional_t<single_byte, empty, typename std::array<uint8_t, sizeof(O)>::iterator>;
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-attributes"
+#endif
+        [[no_unique_address]] value_t value_;
+        [[no_unique_address]] value_buf_t value_buf_;
+        [[no_unique_address]] value_buf_current_t value_buf_current_;
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+        bool input_complete_{ false };
+    public:
+        template<bool SINGLE_BYTE = single_byte>
+            requires (SINGLE_BYTE == true)
+        explicit sha512(size_t target_hash_size)
+            : target_hash_size_{ get_target_hash_size<O, sph::hash_algorithm::sha256>(target_hash_size) }
+            , state_{ init_state() }
+            , value_{}
+            , value_buf_{}
+            , value_buf_current_{} {
+        }
+        template<bool SINGLE_BYTE = single_byte>
+            requires (SINGLE_BYTE == false)
+        explicit sha512(size_t target_hash_size)
+            : target_hash_size_{ get_target_hash_size<O, sph::hash_algorithm::sha256>(target_hash_size) }
+            , state_{ init_state() }
+            , value_{}
+            , value_buf_{ reinterpret_cast<uint8_t*>(&value_), sizeof(O) }
+            , value_buf_current_{ value_buf_.begin() } {
+        }
+
+        auto target_hash_size() const -> size_t
+        {
+            return target_hash_size_;
+        }
+
+        auto hash_size() const -> size_t
+        {
+            return std::distance(hash_.begin(), hash_current_);
+        }
+
+        auto complete() -> bool
+        {
+            return input_complete_ && std::distance(hash_.begin(), hash_current_) == target_hash_size_;
+        }
+
+        auto input_complete() const -> bool
+        {
+            return input_complete_;
+        }
+
+        auto hash_position() const -> size_t
+        {
+            return std::distance(hash_.begin(), hash_current_);
+        }
+
+        template<typename T, next_byte_function F>
+            requires std::is_standard_layout_v<T>
+        auto process(F next_byte) -> std::tuple<bool, T>
+        {
+            constexpr bool return_inputs{ S == sph::hash_style::append };
+            if constexpr (single_byte)
+            {
+                if (input_complete_)
+                {
+                    return std::distance(hash_.begin(), hash_current_) == target_hash_size_ ? std::tuple<bool, T>{false, 0} : std::tuple<bool, T>{true, * hash_current_++};
+                }
+
+                while (true)
+                {
+                    if (auto [byte_ok, byte_value] {next_byte()}; byte_ok)
+                    {
+                        *chunk_current_ = byte_value;
+                        if (chunk_current_ == chunk_.end())
+                        {
+                            crypto_hash_sha256_update(&state_, chunk_.data(), chunk_.size());
+                            chunk_current_ = chunk_.begin();
+                        }
+
+                        if constexpr (return_inputs)
+                        {
+                            return std::tuple{ true, static_cast<O>(byte_value) };
+                        }
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                if (chunk_current_ != chunk_.begin())
+                {
+                    crypto_hash_sha256_update(&state_, chunk_.data(), std::distance(chunk_.begin(), chunk_current_));
+                }
+
+                crypto_hash_sha256_final(&state_, hash_.data());
+                input_complete_ = true;
+                return std::tuple{ true, static_cast<O>(*hash_current_++) };
+            }
+            else
+            {
+                if (input_complete_)
+                {
+                    if (std::distance(hash_.begin(), hash_current_) >= target_hash_size_)
+                    {
+                        return { false, O{} };
+                    }
+
+                    if (std::distance(hash_current_, hash_.end()) < sizeof(O))
+                    {
+                        throw std::runtime_error(
+                            std::format(
+                                "Cannot handle output type size of {} bytes. Not enough hash data to fill the output value. Expected {} bytes, only {}{} hash bytes available.",
+                                sizeof(O),
+                                target_hash_size_,
+                                target_hash_size_ < hash_.size() ? std::format(" of {}", hash_.size()) : std::format(""),
+                                hash_.size()));
+                    }
+
+                    while (true)
+                    {
+                        *value_buf_current_++ = *hash_current_++;
+                        if (value_buf_current_ == value_buf_.end())
+                        {
+                            value_buf_current_ = value_buf_.begin();
+                            return { true, value_ };
+                        }
+                    }
+                }
+
+                while (true)
+                {
+                    if (auto [byte_ok, byte_value] {next_byte()}; byte_ok)
+                    {
+                        *chunk_current_ = byte_value;
+                        if (chunk_current_ == chunk_.end())
+                        {
+                            crypto_hash_sha256_update(&state_, chunk_.data(), chunk_.size());
+                            chunk_current_ = chunk_.begin();
+                        }
+
+                        if constexpr (return_inputs)
+                        {
+                            *value_buf_current_++ = byte_value;
+                            if (value_buf_current_ == value_buf_.end())
+                            {
+                                value_buf_current_ = value_buf_.begin();
+                                return { true, value_ };
+                            }
+                        }
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                if (chunk_current_ != chunk_.begin())
+                {
+                    crypto_hash_sha256_update(&state_, chunk_.data(), std::distance(chunk_.begin(), chunk_current_));
+                }
+
+                crypto_hash_sha256_final(&state_, hash_.data());
+                input_complete_ = true;
+
+                while (true)
+                {
+                    *value_buf_current_++ = *hash_current_++;
+                    if (value_buf_current_ == value_buf_.end())
+                    {
+                        value_buf_current_ = value_buf_.begin();
+                        return { true, value_ };
+                    }
+                }
+            }
+        }
+    private:
+        static auto init_state() -> crypto_hash_sha256_state
+        {
+            crypto_hash_sha256_state state;
+            crypto_hash_sha256_init(&state);
+            return state;
+        }
+    };
+}
