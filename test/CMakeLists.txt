@@ -50,7 +50,7 @@ target_link_options(
 target_link_libraries(
 	unit_tests 
 	PRIVATE
-		sph-zstd
+		sph-hash
 		doctest::doctest
 		fmt::fmt
 )

@@ -5,7 +5,7 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <ranges>
-#include <sph/ranges/views/hash_encode.h>
+#include <sph/ranges/views/hash.h>
 #include <sph/ranges/views/hash_verify.h>
 #include <vector>
 
