@@ -164,8 +164,11 @@ namespace sph::ranges::views
             }
         };
 
-        template<std::ranges::viewable_range R, typename T = uint8_t>
-        hash_verify_view(R&&) -> hash_verify_view<R, T>;
+        template<std::ranges::viewable_range R, sph::hash_algorithm A, sph::hash_style S>
+        hash_verify_view(R&&) -> hash_verify_view<R, R, A, S>;
+
+        template<std::ranges::viewable_range R, std::ranges::viewable_range H, sph::hash_algorithm A, sph::hash_style S>
+        hash_verify_view(R&&, H&&) -> hash_verify_view<R, H, A, S>;
 
         /**
          * Functor that, given a hashed+hash range or hashed range and a 
@@ -175,21 +178,21 @@ namespace sph::ranges::views
          * @tparam S The hash algorithm.
          */
         template <sph::hash_algorithm A>
-        class hash_verify_fn : public std::ranges::range_adaptor_closure<hash_verify_fn<T>>
+        class hash_verify_fn : public std::ranges::range_adaptor_closure<hash_verify_fn<A>>
         {
             size_t target_hash_size_;
         public:
-            explicit hash_verify_fn(size_t target_hash_size = 0) : window_log_max_{ window_log_max } {}
+            explicit hash_verify_fn(size_t target_hash_size = 0) : target_hash_size_{ target_hash_size } {}
             template <std::ranges::viewable_range R>
-            [[nodiscard]] constexpr auto operator()(R&& range) const -> hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, sph::hash_algorithm A, sph::hash_style::append>
+            [[nodiscard]] constexpr auto operator()(R&& range) const -> hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, A, sph::hash_style::append>
             {
-                return hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, sph::hash_algorithm A, sph::hash_style::append>(target_hash_size_, std::views::all(std::forward<R>(range)));
+                return hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, A, sph::hash_style::append>(target_hash_size_, std::views::all(std::forward<R>(range)));
             }
 
             template <std::ranges::viewable_range R, std::ranges::viewable_range H>
-            [[nodiscard]] constexpr auto operator()(R&& hashed_range, H&& hash_range) const -> hash_verify_view<std::views::all_t<R>, std::views::all_t<H>, sph::hash_algorithm A, sph::hash_style::separate>
+            [[nodiscard]] constexpr auto operator()(R&& hashed_range, H&& hash_range) const -> hash_verify_view<std::views::all_t<R>, std::views::all_t<H>, A, sph::hash_style::separate>
             {
-                return hash_verify_view<std::views::all_t<R>, std::views::all_t<H>, sph::hash_algorithm A, sph::hash_style::separate>(
+                return hash_verify_view<std::views::all_t<R>, std::views::all_t<H>, A, sph::hash_style::separate>(
                     target_hash_size_, std::views::all(std::forward<R>(hashed_range)), std::views::all(std::forward<H>(hash_range)));
             }
         };
