@@ -1,8 +1,5 @@
 #pragma once
-#include <cassert>
-#include <format>
 #include <ranges>
-#include <stdexcept>
 #include <sph/hash_algorithm.h>
 #include <sph/hash_style.h>
 #include <sph/ranges/views/detail/hash_iterator.h>
@@ -86,7 +83,7 @@ namespace sph::views
      * @param target_hash_size The minimum size in bytes of the hash to create. If sizeof(T) > 1, this may grow to fill the type.
      * @return a functor that takes a range and returns a hashed view of that range.
 	 */
-	template<typename T = uint8_t, sph::hash_algorithm A = sph::hash_algorithm::blake2b, sph::hash_style S = sph::hash_style::separate>
+	template<sph::hash_algorithm A = sph::hash_algorithm::blake2b, typename T = uint8_t, sph::hash_style S = sph::hash_style::separate>
     auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, S>
     {
         return sph::ranges::views::detail::hash_fn<T, A, S>{target_hash_size};

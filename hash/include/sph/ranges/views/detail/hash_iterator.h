@@ -1,16 +1,12 @@
 #pragma once
-#include <array>
 #include <tuple>
 #include <type_traits>
 #include <sph/hash_algorithm.h>
 #include <sph/hash_style.h>
-#include <sph/ranges/views/detail/get_target_hash_size.h>
 #include <sph/ranges/views/detail/blake2b.h>
 #include <sph/ranges/views/detail/sha256.h>
 #include <sph/ranges/views/detail/sha512.h>
 #include <sph/ranges/views/detail/rolling_buffer.h>
-#include <sodium/crypto_hash_sha256.h>
-#include <sodium/crypto_hash_sha512.h>
 #include <sodium/crypto_generichash_blake2b.h>
 
 namespace sph
@@ -92,7 +88,7 @@ namespace sph::ranges::views::detail
          * in the output range is reached.
          */
         hash_iterator(std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end, size_t target_hash_size)
-            : to_hash_current_(std::move(begin)), to_hash_end_(std::move(end)), hash_{ target_hash_size }, value_{ hash_.process<T>(next_byte) }
+            : to_hash_current_(std::move(begin)), to_hash_end_(std::move(end)), hash_{ target_hash_size }, value_{ hash_.template process<T>(next_byte) }
         {
         }
 

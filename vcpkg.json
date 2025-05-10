@@ -7,7 +7,7 @@
   "features": {
     "tests": {
       "description": "Build tests",
-      "dependencies": [ "doctest", "fmt" ]
+      "dependencies": [ "doctest", "fmt", "daw-json-link" ]
     }
   }
 }

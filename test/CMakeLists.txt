@@ -3,6 +3,7 @@ include (GNUInstallDirs)
 
 find_package(doctest CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
+find_package(daw-json-link REQUIRED)
 
 add_executable(unit_tests)
 
@@ -11,8 +12,7 @@ target_sources(
 	PRIVATE
 		main.cpp
 		unit_tests.cpp
-		
- "doctest_util.h")
+)
 
 target_compile_options(unit_tests PRIVATE "$<$<C_COMPILER_FRONTEND_VARIANT:MSVC>:/utf-8>")
 target_compile_options(unit_tests PRIVATE "$<$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>:/utf-8>")
@@ -53,5 +53,9 @@ target_link_libraries(
 		sph-hash
 		doctest::doctest
 		fmt::fmt
+		daw::daw-json-link
 )
 
+target_include_directories(unit_tests PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
