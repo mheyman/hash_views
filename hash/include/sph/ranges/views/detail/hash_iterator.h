@@ -17,12 +17,11 @@ namespace sph
 
 namespace sph::ranges::views::detail
 {
-    enum class iterate_style
+    enum class iterate_style : uint8_t
     {
-        no_appended_hash,
-        skip_appended_hash
+        no_appended_hash = 0,
+        skip_appended_hash = 1
     };
-
 
 
     /**
@@ -71,9 +70,9 @@ namespace sph::ranges::views::detail
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+        std::unique_ptr<hash_type_t> hash_;
         std::ranges::const_iterator_t<R> to_hash_current_;
         std::ranges::const_sentinel_t<R> to_hash_end_;
-        hash_type_t hash_;
         T value_;
     public:
         /**
@@ -88,13 +87,41 @@ namespace sph::ranges::views::detail
          * in the output range is reached.
          */
         hash_iterator(std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end, size_t target_hash_size)
-            : to_hash_current_(std::move(begin)), to_hash_end_(std::move(end)), hash_{ target_hash_size }, value_{ hash_.template process<T>(next_byte) }
+            : hash_{ std::make_unique<hash_type_t>(target_hash_size) }
+            , to_hash_current_(std::move(begin))
+            , to_hash_end_(std::move(end))
+            , value_{ hash_.template process<T>(next_byte) }
         {
         }
 
+        hash_iterator(hash_iterator<R, T, A, S, IS>& o) noexcept
+            : hash_{ nullptr } // only one can hash at a time
+            , to_hash_current_{o.to_hash_current_}
+            , to_hash_end_{ o.to_hash_end_ }
+            , value_{ o.value_ }
+        {
+        }
+        hash_iterator(hash_iterator<R, T, A, S, IS>&&) = default;
+        ~hash_iterator() = default;
+        auto operator=(hash_iterator<R, T, A, S, IS> const& o) noexcept -> hash_iterator&
+        {
+            if (&o != this)
+            {
+                hash_.reset(); // only one can hash at a time
+                to_hash_current_ = o.to_hash_current_;
+                to_hash_end_ = o.to_hash_end_;
+                value_ = o.value_;
+            }
+
+            return *this;
+            
+        }
+        auto operator=(hash_iterator&&) -> hash_iterator& = default;
+
         auto hash_size() const -> size_t
         {
-            return hash_.hash_size();
+            verify_can_hash();
+            return hash_->hash_size();
         }
 
         /**
@@ -103,8 +130,9 @@ namespace sph::ranges::views::detail
          */
         auto operator++(int) -> hash_iterator&
         {
+            verify_can_hash();
             auto ret{ *this };
-            value_ = hash_.process<T>(next_byte);
+            value_ = hash_->template process<T>(next_byte);
             return ret;
         }
 
@@ -114,7 +142,8 @@ namespace sph::ranges::views::detail
          */
         auto operator++() -> hash_iterator&
         {
-            value_ = hash_.process<T>(next_byte);
+            verify_can_hash();
+            value_ = hash_->template process<T>(next_byte);
             return *this;
         }
 
@@ -128,17 +157,26 @@ namespace sph::ranges::views::detail
             if constexpr (sizeof(input_type) == 1)
             {
                 return to_hash_current_ == i.to_hash_current_ 
-                    && to_hash_end_ == i.to_hash_end_ 
-                    && hash_.input_complete() == i.hash_.input_complete()
-                    && hash_.hash_position() == i.hash_.hash_position();
+                    && to_hash_end_ == i.to_hash_end_
+                    && (
+                        (!hash_ && !i.hash_) 
+                        || 
+                        (
+                            hash_ && i.hash_ 
+                            && hash_->input_complete() == i.hash_->input_complete()
+                            && hash_->hash_position() == i.hash_->hash_position()));
             }
             else
             {
                 return to_hash_current_ == i.to_hash_current_ 
                     && to_hash_end_ == i.to_hash_end_ 
-                    && input_.position == i.input_.position 
-                    && hash_.input_complete() == i.hash_.input_complete()
-                    && hash_.hash_position() == i.hash_.hash_position();
+                    && input_.position == i.input_.position
+                    && (
+                        (!hash_ && !i.hash_) 
+                        || 
+                        (hash_ && i.hash_ 
+                        && hash_->input_complete() == i.hash_->input_complete()
+                            && hash_->hash_position() == i.hash_->hash_position()));
             }
         }
 
@@ -148,7 +186,8 @@ namespace sph::ranges::views::detail
          */
         auto equals(const hash_sentinel<R, T, A, S, IS>&) const noexcept -> bool
         {
-            return hash_.complete();
+            verify_can_hash();
+            return hash_->complete();
         }
 
         /**
@@ -166,7 +205,13 @@ namespace sph::ranges::views::detail
         auto operator!=(const hash_sentinel<R, T, A, S, IS>& s) const noexcept -> bool { return !equals(s); }
 
     private:
-
+        auto verify_can_hash() const -> void
+        {
+            if (!hash_)
+            {
+                throw std::runtime_error("Only one copy of the hash iterator can hash. You probably made a copy of the iterator and tried to use it. Moving the iterator is fine.");
+            }
+        }
         auto next_byte_from_input_range() -> std::tuple<bool, uint8_t>
         {
             if constexpr (sizeof(input_type) == 1)
@@ -226,7 +271,7 @@ namespace sph::ranges::views::detail
                     }
                     else
                     {
-                        rolling_buffer_.done(hash_.target_hash_size());
+                        rolling_buffer_.done(hash_->target_hash_size());
                         return rolling_buffer_.next();
                     }
                 }

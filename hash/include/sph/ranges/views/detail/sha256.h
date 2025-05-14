@@ -6,7 +6,6 @@
 #include <sph/hash_style.h>
 #include <sph/ranges/views/detail/get_target_hash_size.h>
 #include <sph/ranges/views/detail/process_util.h>
-#include <tuple>
 #include <type_traits>
 namespace sph::ranges::views::detail
 {
@@ -17,9 +16,9 @@ namespace sph::ranges::views::detail
         static constexpr bool single_byte{ sizeof(O) == 1 };
         size_t target_hash_size_;
         crypto_hash_sha256_state state_;
-        std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::hash_size()> hash_;
+        std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::hash_size()> hash_{};
         std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::hash_size()>::iterator hash_current_{ hash_.begin() };
-        std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::chunk_size()> chunk_;
+        std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::chunk_size()> chunk_{};
         std::array<uint8_t, sph::hash_param<sph::hash_algorithm::sha256>::chunk_size()>::iterator chunk_current_{ chunk_.begin() };
         struct empty {};
         using value_t = std::conditional_t<single_byte, empty, O>;
@@ -63,7 +62,7 @@ namespace sph::ranges::views::detail
 
         auto hash_size() const -> size_t
         {
-            return std::distance(hash_.begin(), hash_current_);
+            return std::distance<decltype(hash_.begin())>(hash_.begin(), hash_current_);
         }
 
         auto hash() const 
@@ -83,19 +82,18 @@ namespace sph::ranges::views::detail
 
         auto hash_position() const -> size_t
         {
-            return std::distance(hash_.begin(), hash_current_);
+            return std::distance<decltype(hash_.begin())>(hash_.begin(), hash_current_);
         }
 
         template<typename T, next_byte_function F>
             requires std::is_standard_layout_v<T>
-        auto process(F next_byte) -> std::tuple<bool, T>
+        auto process(F next_byte) -> T
         {
-            constexpr bool return_inputs{ S == sph::hash_style::append };
             if constexpr (single_byte)
             {
                 if (input_complete_)
                 {
-                    return std::distance(hash_.begin(), hash_current_) == target_hash_size_ ? std::tuple<bool, T>{false, 0} : std::tuple<bool, T>{true, * hash_current_++};
+                    return std::distance(hash_.begin(), hash_current_) == static_cast<ptrdiff_t>(target_hash_size_) ? 0 : *hash_current_++;
                 }
 
                 while (true)
@@ -111,7 +109,7 @@ namespace sph::ranges::views::detail
 
                         if constexpr (return_inputs)
                         {
-                            return std::tuple{ true, static_cast<O>(byte_value) };
+                            return static_cast<O>(byte_value);
                         }
                     }
                     else
@@ -127,7 +125,7 @@ namespace sph::ranges::views::detail
 
                 crypto_hash_sha256_final(&state_, hash_.data());
                 input_complete_ = true;
-                return std::tuple{ true, static_cast<O>(*hash_current_++) };
+                return static_cast<O>(*hash_current_++);
             }
             else
             {
@@ -135,7 +133,7 @@ namespace sph::ranges::views::detail
                 {
                     if (std::distance(hash_.begin(), hash_current_) >= target_hash_size_)
                     {
-                        return { false, O{} };
+                        return O{};
                     }
 
                     if (std::distance(hash_current_, hash_.end()) < sizeof(O))
@@ -155,7 +153,7 @@ namespace sph::ranges::views::detail
                         if (value_buf_current_ == value_buf_.end())
                         {
                             value_buf_current_ = value_buf_.begin();
-                            return { true, value_ };
+                            return value_;
                         }
                     }
                 }
@@ -177,7 +175,7 @@ namespace sph::ranges::views::detail
                             if (value_buf_current_ == value_buf_.end())
                             {
                                 value_buf_current_ = value_buf_.begin();
-                                return { true, value_ };
+                                return value_;
                             }
                         }
                     }
@@ -201,7 +199,7 @@ namespace sph::ranges::views::detail
                     if (value_buf_current_ == value_buf_.end())
                     {
                         value_buf_current_ = value_buf_.begin();
-                        return { true, value_ };
+                        return value_;
                     }
                 }
             }

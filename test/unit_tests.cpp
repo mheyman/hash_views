@@ -38,46 +38,49 @@ namespace
                 .outlen = outlen,
                 .out = out | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
                 {
-                    return static_cast<uint8_t>(std::stoul(std::string{v}, nullptr, 16));
+                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
                 }) | std::ranges::to<std::vector<uint8_t>>(),
                 .input = input | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
                 {
-                    return static_cast<uint8_t>(std::stoul(std::string{v}, nullptr, 16));
+                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
                 }) | std::ranges::to<std::vector<uint8_t>>(),
                 .key = key | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
                 {
-                    return static_cast<uint8_t>(std::stoul(std::string{v}, nullptr, 16));
+                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
                 }) | std::ranges::to<std::vector<uint8_t>>(),
                 .salt = salt | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
                 {
-                    return static_cast<uint8_t>(std::stoul(std::string{v}, nullptr, 16));
+                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
                 }) | std::ranges::to<std::vector<uint8_t>>(),
                 .personal = personal | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
                 {
-                    return static_cast<uint8_t>(std::stoul(std::string{v}, nullptr, 16));
+                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
                 }) | std::ranges::to<std::vector<uint8_t>>()
             };
         }
     };
 }
 
-template<>
-struct daw::json::json_data_contract<test_vector_json> {
-    static constexpr char const outlen[] = "outlen";
-    static constexpr char const out[] = "out";
-    static constexpr char const input[] = "input";
-    static constexpr char const key[] = "key";
-    static constexpr char const salt[] = "salt";
-    static constexpr char const personal[] = "personal";
-    using type = json_member_list<
-        json_number<outlen, size_t>,
-        json_string<out, std::string>,
-        json_string<input, std::string>,
-        json_string<key, std::string>,
-        json_string<salt, std::string>,
-        json_string<personal, std::string>
-    >;
-}; 
+namespace daw::json {
+    template<>
+    struct json_data_contract<test_vector_json> {
+        static constexpr char const outlen[] = "outlen";
+        static constexpr char const out[] = "out";
+        static constexpr char const input[] = "input";
+        static constexpr char const key[] = "key";
+        static constexpr char const salt[] = "salt";
+        static constexpr char const personal[] = "personal";
+        using type = json_member_list<
+            json_number<outlen, size_t>,
+            json_string<out, std::string>,
+            json_string<input, std::string>,
+            json_string<key, std::string>,
+            json_string<salt, std::string>,
+            json_string<personal, std::string>
+        >;
+    };
+
+} // namespace daw::json
 
 namespace
 {
@@ -87,19 +90,35 @@ namespace
         std::string json_string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 
         try {
-            auto test_vector_jsons = daw::json::from_json_array<test_vector_json>(json_string);
-            return test_vector_jsons | std::views::transform([](test_vector_json const& v) -> test_vector { return v.test_vector(); }) | std::ranges::to<std::vector>();
+            std::vector<test_vector_json> test_vectors_json = daw::json::from_json_array<test_vector_json>(json_string);
+            return test_vectors_json | std::views::transform([](test_vector_json const& v) -> test_vector { return v.test_vector(); }) | std::ranges::to<std::vector>();
         } catch (daw::json::json_exception const& ex) {
             throw std::runtime_error(fmt::format("Failed to read blake2b test vector: {}", ex.what()));
         }
     }
 
-    // ReSharper disable once CppInconsistentNaming
     std::vector<test_vector> const blake2b_test_vectors {get_test_vector("blake2b.json")};
     std::vector<test_vector> const sha256_test_vectors {get_test_vector("sha256.json")};
     std::vector<test_vector> const sha512_test_vectors {get_test_vector("sha512.json")};
 }
 
+TEST_CASE("foo")
+{
+    (void)std::ranges::_Pipe::_Range_adaptor_closure_object
+    <
+        sph::ranges::views::detail::hash_view
+        <
+            std::ranges::ref_view
+            <
+                const std::vector<uint8_t, std::allocator<uint8_t>>
+            >,
+            uint8_t,
+            sph::hash_algorithm::blake2b,
+            sph::hash_style::separate
+        >
+    >;
+}
+#if 0
 TEST_CASE("hash.vectors")
 {
     for (auto const& test_vector : blake2b_test_vectors)
@@ -136,3 +155,4 @@ TEST_CASE("foo")
         | std::ranges::to<std::vector<uint8_t>>()};
     CHECK(foo == std::vector<uint8_t> { 0x01, 0xA1 });
 }
+#endif

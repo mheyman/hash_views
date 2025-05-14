@@ -14,6 +14,7 @@ target_sources(
 		unit_tests.cpp
 )
 
+target_compile_features(unit_tests PRIVATE cxx_std_23)
 target_compile_options(unit_tests PRIVATE "$<$<C_COMPILER_FRONTEND_VARIANT:MSVC>:/utf-8>")
 target_compile_options(unit_tests PRIVATE "$<$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>:/utf-8>")
 target_compile_options(
