@@ -54,9 +54,9 @@ namespace sph::ranges::views
                 }
                 auto operator*() const -> bool { return value_; }
                 auto operator==(const bool_iterator& other) const noexcept -> bool { return done_ == other.done_; }
-                auto operator==(const bool_sentinel& s) const noexcept -> bool { return done_; }
+                auto operator==(const bool_sentinel& ) const noexcept -> bool { return done_; }
                 auto operator!=(const bool_iterator& other) const noexcept -> bool { return done_ == other.done_; }
-                auto operator!=(const bool_sentinel& s) const noexcept -> bool { return !done_; }
+                auto operator!=(const bool_sentinel& ) const noexcept -> bool { return !done_; }
             };
 
             class bool_sentinel
@@ -154,20 +154,12 @@ namespace sph::ranges::views
                         return std::get<0>(pair) == std::get<1>(pair);
                     });
             }
-
-
-            /**
-             * Verify the hash.
-             */
-            auto verify() const -> bool
-            {
-            }
         };
 
-        template<std::ranges::viewable_range R, sph::hash_algorithm A, sph::hash_style S>
+        template<std::ranges::viewable_range R, sph::hash_algorithm A = sph::hash_algorithm::blake2b, sph::hash_style S = sph::hash_style::append>
         hash_verify_view(R&&) -> hash_verify_view<R, R, A, S>;
 
-        template<std::ranges::viewable_range R, std::ranges::viewable_range H, sph::hash_algorithm A, sph::hash_style S>
+        template<std::ranges::viewable_range R, std::ranges::viewable_range H, sph::hash_algorithm A = sph::hash_algorithm::blake2b, sph::hash_style S = sph::hash_style::separate>
         hash_verify_view(R&&, H&&) -> hash_verify_view<R, H, A, S>;
 
         /**

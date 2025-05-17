@@ -65,7 +65,7 @@ namespace sph::ranges::views::detail
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunknown-attributes"
 #endif
-        [[no_unique_address]] input_value_t input_{ {}, sizeof(input_type) };
+        [[no_unique_address]] input_value_t input_{input_init()};
         [[no_unique_address]] rolling_buffer_t rolling_buffer_;
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -90,7 +90,7 @@ namespace sph::ranges::views::detail
             : hash_{ std::make_unique<hash_type_t>(target_hash_size) }
             , to_hash_current_(std::move(begin))
             , to_hash_end_(std::move(end))
-            , value_{ hash_.template process<T>(next_byte) }
+            , value_{ hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); }) }
         {
         }
 
@@ -132,7 +132,7 @@ namespace sph::ranges::views::detail
         {
             verify_can_hash();
             auto ret{ *this };
-            value_ = hash_->template process<T>(next_byte);
+            value_ = hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); });
             return ret;
         }
 
@@ -143,7 +143,7 @@ namespace sph::ranges::views::detail
         auto operator++() -> hash_iterator&
         {
             verify_can_hash();
-            value_ = hash_->template process<T>(next_byte);
+            value_ = hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); });
             return *this;
         }
 
@@ -205,6 +205,18 @@ namespace sph::ranges::views::detail
         auto operator!=(const hash_sentinel<R, T, A, S, IS>& s) const noexcept -> bool { return !equals(s); }
 
     private:
+        static auto input_init()
+        {
+            if constexpr (sizeof(input_type) == 1)
+            {
+                return empty{};
+            }
+            else
+            {
+                return input_value_with_position{ {}, sizeof(input_type) };
+            }
+        }
+
         auto verify_can_hash() const -> void
         {
             if (!hash_)
@@ -212,22 +224,35 @@ namespace sph::ranges::views::detail
                 throw std::runtime_error("Only one copy of the hash iterator can hash. You probably made a copy of the iterator and tried to use it. Moving the iterator is fine.");
             }
         }
+
+        auto input_complete() -> bool
+        {
+            if constexpr (sizeof(input_type) == 1)
+            {
+                return to_hash_current_ == to_hash_end_;
+            }
+            else
+            {
+                return input_.position == sizeof(input_type) && to_hash_current_ == to_hash_end_;
+            }
+        }
+
         auto next_byte_from_input_range() -> std::tuple<bool, uint8_t>
         {
             if constexpr (sizeof(input_type) == 1)
             {
-                if (to_hash_current_ == to_hash_end_)
+                if (input_complete())
                 {
-                    return { false, 0 };
+                    return { false, static_cast<uint8_t>(0) };
                 }
 
-                return { true, (*to_hash_current_)++ };
+                return { true, *to_hash_current_++ };
             }
             else
             {
-                if (to_hash_current_ == to_hash_end_ && input_.position == sizeof(input_type))
+                if (input_complete())
                 {
-                    return { false, 0 };
+                    return { false, static_cast<uint8_t>(0) };
                 }
 
                 if (input_.position == sizeof(input_type))

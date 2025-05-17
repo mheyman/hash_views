@@ -192,8 +192,8 @@
       "description": "Target Unix-like OS with the gcc compiler, debug build type",
       "inherits": "conf-unixlike-common",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "gcc-14",
-        "CMAKE_CXX_COMPILER": "g++-14",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
         "CMAKE_BUILD_TYPE": "Debug",
         "DEVELOPER_MODE": "OFF"
       }
@@ -204,8 +204,8 @@
       "description": "Target Unix-like OS with the gcc compiler, release build type",
       "inherits": "conf-unixlike-common",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "gcc-14",
-        "CMAKE_CXX_COMPILER": "g++-14",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "DEVELOPER_MODE": "OFF"
       }
@@ -240,8 +240,8 @@
       "description": "Target Unix-like OS with the gcc compiler, debug build type",
       "inherits": "conf-unixlike-common",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "gcc-14",
-        "CMAKE_CXX_COMPILER": "g++-14",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
         "CMAKE_BUILD_TYPE": "Debug",
         "DEVELOPER_MODE": "ON"
       }
@@ -252,8 +252,8 @@
       "description": "Target Unix-like OS with the gcc compiler, release build type",
       "inherits": "conf-unixlike-common",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "gcc-14",
-        "CMAKE_CXX_COMPILER": "g++-14",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "DEVELOPER_MODE": "ON"
       }
@@ -279,7 +279,6 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "description": "Target Unix-like OS with the clang compiler, release build type",
         "DEVELOPER_MODE": "ON"
       }
     }

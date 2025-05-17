@@ -102,23 +102,27 @@ namespace
     std::vector<test_vector> const sha512_test_vectors {get_test_vector("sha512.json")};
 }
 
-TEST_CASE("foo")
-{
-    (void)std::ranges::_Pipe::_Range_adaptor_closure_object
-    <
-        sph::ranges::views::detail::hash_view
-        <
-            std::ranges::ref_view
-            <
-                const std::vector<uint8_t, std::allocator<uint8_t>>
-            >,
-            uint8_t,
-            sph::hash_algorithm::blake2b,
-            sph::hash_style::separate
-        >
-    >;
-}
-#if 0
+// namespace
+// {
+//     template <class _Left, class _Right>
+//         requires std::ranges::_Pipe::_Range_adaptor_closure_object<_Left>&& std::ranges::_Pipe::_Range_adaptor_closure_object<_Right>
+//     && std::constructible_from<std::remove_cvref_t<_Left>, _Left>
+//         && std::constructible_from<std::remove_cvref_t<_Right>, _Right>
+//         auto foo(_Left&& left, _Right&& right) -> void;
+//     {
+//         (void)left;
+//         (void)right;
+//     }
+// }
+// 
+// TEST_CASE("foo")
+// {
+//     std::vector<uint8_t> r{};
+//     sph::ranges::views::detail::hash_view<std::ranges::ref_view<const std::vector<uint8_t, std::allocator<uint8_t>>>, uint8_t, sph::hash_algorithm::blake2b, sph::hash_style::separate> left(10, r);
+//     std::ranges::_Range_closure<std::ranges::_To_template_fn<std::vector>> right;
+//     foo(left, right);
+// }
+
 TEST_CASE("hash.vectors")
 {
     for (auto const& test_vector : blake2b_test_vectors)
@@ -155,4 +159,3 @@ TEST_CASE("foo")
         | std::ranges::to<std::vector<uint8_t>>()};
     CHECK(foo == std::vector<uint8_t> { 0x01, 0xA1 });
 }
-#endif

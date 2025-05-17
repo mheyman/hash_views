@@ -120,7 +120,7 @@ namespace sph::ranges::views::detail
 
                 if (chunk_current_ != chunk_.begin())
                 {
-                    crypto_generichash_blake2b_update(&state_, chunk_.data(), std::distance(chunk_.begin(), chunk_current_));
+                    crypto_generichash_blake2b_update(&state_, chunk_.data(), static_cast<size_t>(std::distance(chunk_.begin(), chunk_current_)));
                 }
 
                 crypto_generichash_blake2b_final(&state_, hash_.data(), hash_.size());

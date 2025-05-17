@@ -115,7 +115,7 @@ namespace sph::ranges::views::detail
 
                 if (chunk_current_ != chunk_.begin())
                 {
-                    crypto_hash_sha256_update(&state_, chunk_.data(), std::distance(chunk_.begin(), chunk_current_));
+                    crypto_hash_sha256_update(&state_, chunk_.data(), static_cast<size_t>(std::distance(chunk_.begin(), chunk_current_)));
                 }
 
                 crypto_hash_sha256_final(&state_, hash_.data());

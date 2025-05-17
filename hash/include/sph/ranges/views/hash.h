@@ -44,9 +44,10 @@ namespace sph::ranges::views
             auto operator=(hash_view const&)-> hash_view & = default;
             auto operator=(hash_view&& o) noexcept -> hash_view & = default;
 
-            iterator begin() const { return iterator(std::ranges::begin(input_), std::ranges::end(input_), target_hash_size_); }
+            auto begin() const -> iterator { return iterator(std::ranges::begin(input_), std::ranges::end(input_), target_hash_size_); }
 
-            sentinel end() const { return sentinel{}; }
+            // ReSharper disable once CppMemberFunctionMayBeStatic
+            auto end() const -> sentinel { return sentinel{}; }
         };
 
         template<std::ranges::viewable_range R, typename T = uint8_t, sph::hash_algorithm A = sph::hash_algorithm::blake2b, sph::hash_style S = sph::hash_style::separate>
