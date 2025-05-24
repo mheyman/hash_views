@@ -72,7 +72,7 @@ namespace sph::ranges::views::detail
 
         auto complete() -> bool
         {
-            return input_complete_ && std::distance(hash_.begin(), hash_current_) == target_hash_size_;
+            return input_complete_ && std::distance(hash_.begin(), hash_current_) == static_cast<ptrdiff_t>(target_hash_size_);
         }
 
         auto input_complete() const -> bool

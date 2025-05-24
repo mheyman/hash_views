@@ -49,8 +49,9 @@ namespace sph::ranges::views::detail
         using iterator_concept = std::input_iterator_tag;
         using iterator_category = std::input_iterator_tag;
         using difference_type = std::ptrdiff_t;
-        using pointer = const bool*;
-        using reference = const bool&;
+        using value_type = std::remove_cvref_t<T>;
+        using pointer = const value_type*;
+        using reference = const value_type&;
         using input_type = std::remove_cvref_t<std::ranges::range_value_t<R>>;
         using output_type = std::remove_cvref_t<T>;
     private:
@@ -101,7 +102,7 @@ namespace sph::ranges::views::detail
             , value_{ o.value_ }
         {
         }
-        hash_iterator(hash_iterator<R, T, A, S, IS>&&) = default;
+        hash_iterator(hash_iterator<R, T, A, S, IS>&&) noexcept = default;
         ~hash_iterator() = default;
         auto operator=(hash_iterator<R, T, A, S, IS> const& o) noexcept -> hash_iterator&
         {
@@ -116,7 +117,7 @@ namespace sph::ranges::views::detail
             return *this;
             
         }
-        auto operator=(hash_iterator&&) -> hash_iterator& = default;
+        auto operator=(hash_iterator&&) noexcept -> hash_iterator& = default;
 
         auto hash_size() const -> size_t
         {
@@ -312,9 +313,9 @@ namespace sph::ranges::views::detail
         requires std::ranges::input_range<R>&& std::is_standard_layout_v<T>&& std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
     struct hash_sentinel
     {
-        auto operator==(const hash_sentinel& /*other*/) const -> bool { return true; }
-        auto operator==(const hash_iterator<R, T, A, S, IS>& i) const -> bool { return i.equals(*this); }
-        auto operator!=(const hash_sentinel& /*other*/) const -> bool { return false; }
-        auto operator!=(const hash_iterator<R, T, A, S, IS>& i) const -> bool { return !i.equals(*this); }
+        auto operator==(const hash_sentinel& /*other*/) const noexcept -> bool { return true; }
+        auto operator==(const hash_iterator<R, T, A, S, IS>& i) const noexcept -> bool { return i.equals(*this); }
+        auto operator!=(const hash_sentinel& /*other*/) const noexcept -> bool { return false; }
+        auto operator!=(const hash_iterator<R, T, A, S, IS>& i) const noexcept -> bool { return !i.equals(*this); }
     };
 }

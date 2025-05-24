@@ -35,18 +35,16 @@ namespace sph::ranges::views
              * output; it may extend to fill multibyte output.
              * @param input the range to hash.
              */
-            explicit hash_view(size_t target_hash_size, R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+            explicit hash_view(size_t target_hash_size, R&& input) noexcept
                 : input_(std::forward<R>(input)), target_hash_size_{ detail::get_target_hash_size<T, A>(target_hash_size) } {}
 
             hash_view(hash_view const&) = default;
-            hash_view(hash_view&&) = default;
+            hash_view(hash_view&&) noexcept = default;
             ~hash_view() noexcept = default;
-            auto operator=(hash_view const&)-> hash_view & = default;
-            auto operator=(hash_view&& o) noexcept -> hash_view & = default;
+            auto operator=(hash_view const&) -> hash_view& = default;
+            auto operator=(hash_view&&) noexcept -> hash_view& = default;
 
             auto begin() const -> iterator { return iterator(std::ranges::begin(input_), std::ranges::end(input_), target_hash_size_); }
-
-            // ReSharper disable once CppMemberFunctionMayBeStatic
             auto end() const -> sentinel { return sentinel{}; }
         };
 
@@ -62,7 +60,7 @@ namespace sph::ranges::views
         {
             size_t target_hash_size_;
         public:
-            explicit hash_fn(size_t target_hash_size) : target_hash_size_{ target_hash_size }{}
+            explicit hash_fn(size_t target_hash_size) noexcept : target_hash_size_{ target_hash_size } {}
             template <std::ranges::viewable_range R>
             [[nodiscard]] constexpr auto operator()(R&& range) const -> hash_view<std::views::all_t<R>, T, A, S>
             {
@@ -74,17 +72,17 @@ namespace sph::ranges::views
 
 namespace sph::views
 {
-	/**
-	 * A range adaptor that represents view of an underlying sequence after
-	 * applying the requested hash function.
-	 *
+    /**
+     * A range adaptor that represents view of an underlying sequence after
+     * applying the requested hash function.
+     *
      * @tparam T The output type. Defaults to uint8_t. Sizes larger than the hash size of the requested algorithm will fail. Sizes larger than half the hash size - 1 can fail in with hash_style::append.
      * @tparam A The hash algorithm to use. Either hash_algorithm::sha256, hash_algorithm::sha512, or hash_algorithm::blake2b.
      * @tparam S The hash style to use. Either hash_style::append or hash_style::separate. With append style, the input range gets passed to the output view with the hash immediately following.
      * @param target_hash_size The minimum size in bytes of the hash to create. If sizeof(T) > 1, this may grow to fill the type.
      * @return a functor that takes a range and returns a hashed view of that range.
-	 */
-	template<sph::hash_algorithm A = sph::hash_algorithm::blake2b, typename T = uint8_t, sph::hash_style S = sph::hash_style::separate>
+     */
+    template<sph::hash_algorithm A = sph::hash_algorithm::blake2b, typename T = uint8_t, sph::hash_style S = sph::hash_style::separate>
     auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, S>
     {
         return sph::ranges::views::detail::hash_fn<T, A, S>{target_hash_size};

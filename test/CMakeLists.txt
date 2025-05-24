@@ -63,3 +63,13 @@ target_link_libraries(
 target_include_directories(unit_tests PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# Copy JSON files to the output directory
+add_custom_command(
+    TARGET unit_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_CURRENT_SOURCE_DIR}/blake2b.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/sha256.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/sha512.json
+        $<TARGET_FILE_DIR:unit_tests>
+)

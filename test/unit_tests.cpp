@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <doctest/doctest.h>
 #include <fmt/format.h>
@@ -86,14 +87,23 @@ namespace
 {
     auto get_test_vector(std::string_view file_name) -> std::vector<test_vector>
     {
-        std::ifstream f(std::string{file_name});
+        auto file_path{ absolute(std::filesystem::path{file_name}) };
+        if (!exists(file_path))
+        {
+            throw std::runtime_error(fmt::format("JSON file {} does not exist.", file_path.string()));
+        }
+
+        std::ifstream f(file_path);
         std::string json_string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 
-        try {
+        try
+        {
             std::vector<test_vector_json> test_vectors_json = daw::json::from_json_array<test_vector_json>(json_string);
             return test_vectors_json | std::views::transform([](test_vector_json const& v) -> test_vector { return v.test_vector(); }) | std::ranges::to<std::vector>();
-        } catch (daw::json::json_exception const& ex) {
-            throw std::runtime_error(fmt::format("Failed to read blake2b test vector: {}", ex.what()));
+        }
+        catch (daw::json::json_exception const& ex)
+        {
+            throw std::runtime_error(fmt::format("Failed to read {} test vector: {}", file_path.string(), ex.what()));
         }
     }
 
