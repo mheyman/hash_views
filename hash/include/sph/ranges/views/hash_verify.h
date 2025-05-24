@@ -1,16 +1,19 @@
 #pragma once
-#include <format>
 #include <ranges>
-#include <stdexcept>
-#include <sodium/crypto_generichash_blake2b.h>
-#include <sodium/crypto_hash_sha256.h>
-#include <sodium/crypto_hash_sha512.h>
 #include <sph/hash_algorithm.h>
 
 namespace sph::ranges::views
 {
     namespace detail
     {
+        template <typename R>
+        concept single_byte_viewable_range = std::ranges::viewable_range<R> &&
+            (sizeof(std::remove_cvref_t<std::ranges::range_value_t<R>>) == 1);
+
+        template <typename R>
+        concept multi_byte_viewable_range = std::ranges::viewable_range<R> &&
+            (sizeof(std::remove_cvref_t<std::ranges::range_value_t<R>>) > 1);
+
         /**
          * Provides view of hash of the input range.
          * @tparam R The type of the range that holds a hashed stream.
@@ -25,7 +28,7 @@ namespace sph::ranges::views
 
             using input_type = std::remove_cvref_t<std::ranges::range_value_t<R>>;
             static constexpr sph::ranges::views::detail::iterate_style iterate_style =
-                S == sph::hash_style::append 
+                S == sph::hash_style::append || S == sph::hash_style::append_padded
                     ? sph::ranges::views::detail::iterate_style::skip_appended_hash 
                     : sph::ranges::views::detail::iterate_style::no_appended_hash;
             using input_iterator = detail::hash_iterator<R, input_type, A, S, iterate_style>;
@@ -85,7 +88,7 @@ namespace sph::ranges::views
             {}
 
             template<sph::hash_style HS = S>
-                requires (HS == sph::hash_style::append)
+                requires (HS == sph::hash_style::append || S == sph::hash_style::append_padded)
             hash_verify_view(size_t target_hash_size, R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
                 : verify_ok_ { verify(target_hash_size, std::forward<R>(input)) }
             {}
@@ -175,15 +178,28 @@ namespace sph::ranges::views
             size_t target_hash_size_;
         public:
             explicit hash_verify_fn(size_t target_hash_size = 0) : target_hash_size_{ target_hash_size } {}
-            template <std::ranges::viewable_range R>
-            [[nodiscard]] constexpr auto operator()(R&& range) const -> hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, A, sph::hash_style::append>
+
+
+            // default to append style if sizeof range value is 1, else append_padded.
+            template <single_byte_viewable_range R, sph::hash_style S = sph::hash_style::append>
+            [[nodiscard]] constexpr auto operator()(R && range) const -> hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, A, S>
             {
+                static_assert(S == sph::hash_style::append || S == sph::hash_style::append_padded, "Invalid hash style for appended hash.");
                 return hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, A, sph::hash_style::append>(target_hash_size_, std::views::all(std::forward<R>(range)));
             }
 
-            template <std::ranges::viewable_range R, std::ranges::viewable_range H>
-            [[nodiscard]] constexpr auto operator()(R&& hashed_range, H&& hash_range) const -> hash_verify_view<std::views::all_t<R>, std::views::all_t<H>, A, sph::hash_style::separate>
+            // default to append style if sizeof range value is 1, else append_padded.
+            template <multi_byte_viewable_range R, sph::hash_style S = sph::hash_style::append_padded>
+            [[nodiscard]] constexpr auto operator()(R && range) const -> hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, A, S>
             {
+                static_assert(S == sph::hash_style::append || S == sph::hash_style::append_padded, "Invalid hash style for appended hash.");
+                return hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, A, sph::hash_style::append>(target_hash_size_, std::views::all(std::forward<R>(range)));
+            }
+
+            template <std::ranges::viewable_range R, std::ranges::viewable_range H, sph::hash_style S = sph::hash_style::separate>
+            [[nodiscard]] constexpr auto operator()(R&& hashed_range, H&& hash_range) const -> hash_verify_view<std::views::all_t<R>, std::views::all_t<H>, A, S>
+            {
+                static_assert(S == sph::hash_style::separate || S == sph::hash_style::separate_padded, "Invalid hash style for non-appended hash.");
                 return hash_verify_view<std::views::all_t<R>, std::views::all_t<H>, A, sph::hash_style::separate>(
                     target_hash_size_, std::views::all(std::forward<R>(hashed_range)), std::views::all(std::forward<H>(hash_range)));
             }
