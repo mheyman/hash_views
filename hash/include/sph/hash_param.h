@@ -37,7 +37,7 @@ namespace sph
             }
             else if constexpr (A == hash_algorithm::blake2b)
             {
-                return 256;
+                return 128;
             }
             else
             {

@@ -55,16 +55,16 @@ namespace sph::ranges::views::detail
     public:
         template<bool SINGLE_BYTE = single_byte>
             requires (SINGLE_BYTE == true)
-        explicit hash_processor(size_t target_hash_size)
-            : hash_{ get_target_hash_size<O, sph::hash_algorithm::sha256>(target_hash_size) }
+        explicit hash_processor(size_t hash_size)
+            : hash_{ hash_size }
             , value_{}
             , value_buf_{}
             , value_buf_current_{} {
         }
         template<bool SINGLE_BYTE = single_byte>
             requires (SINGLE_BYTE == false)
-        explicit hash_processor(size_t target_hash_size)
-            : hash_{ get_target_hash_size<O, sph::hash_algorithm::sha256>(target_hash_size) }
+        explicit hash_processor(size_t hash_size)
+            : hash_{ hash_size }
             , value_{}
             , value_buf_{ reinterpret_cast<uint8_t*>(&value_), sizeof(O) }
             , value_buf_current_{ value_buf_.begin() } {
@@ -77,7 +77,7 @@ namespace sph::ranges::views::detail
 
         auto hash_size() const -> size_t
         {
-            return std::distance<decltype(hash_.hash().begin())>(hash_.hash().begin(), hash_current_);
+            return static_cast<size_t>(std::distance<decltype(hash_.hash().begin())>(hash_.hash().begin(), hash_current_));
         }
 
         auto hash() const
@@ -85,9 +85,9 @@ namespace sph::ranges::views::detail
             return std::ranges::subrange(hash_.hash().begin(), hash_current_);
         }
 
-        auto complete() -> bool
+        auto complete() const -> bool
         {
-            return input_complete_ && std::distance(hash_.hash().begin(), hash_current_) == static_cast<ptrdiff_t>(hash_.target_hash_size());
+            return input_complete_ && hash_size() == target_hash_size();
         }
 
         auto input_complete() const -> bool
@@ -108,7 +108,7 @@ namespace sph::ranges::views::detail
             {
                 if (input_complete_)
                 {
-                    return std::distance(hash_.hash().begin(), hash_current_) == static_cast<ptrdiff_t>(hash_.target_hash_size()) ? 0 : *hash_current_++;
+                    return hash_size() == target_hash_size() ? 0 : *hash_current_++;
                 }
 
                 while (true)
@@ -116,6 +116,7 @@ namespace sph::ranges::views::detail
                     if (auto [byte_ok, byte_value] {next_byte()}; byte_ok)
                     {
                         *chunk_current_ = byte_value;
+                        ++chunk_current_;
                         if (chunk_current_ == chunk_.end())
                         {
                             hash_.update(chunk_);
@@ -141,7 +142,7 @@ namespace sph::ranges::views::detail
             {
                 if (input_complete_)
                 {
-                    if (std::distance(hash_.hash().begin(), hash_current_) >= hash_.target_hash_size())
+                    if (hash_size() >= target_hash_size())
                     {
                         return O{};
                     }
@@ -173,6 +174,7 @@ namespace sph::ranges::views::detail
                     if (auto [byte_ok, byte_value] {next_byte()}; byte_ok)
                     {
                         *chunk_current_ = byte_value;
+                        ++chunk_current_;
                         if (chunk_current_ == chunk_.end())
                         {
                             hash_.update(chunk_);

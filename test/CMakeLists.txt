@@ -66,10 +66,27 @@ target_include_directories(unit_tests PUBLIC
 
 # Copy JSON files to the output directory
 add_custom_command(
-    TARGET unit_tests POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/blake2b.json
+           ${CMAKE_CURRENT_BINARY_DIR}/sha256.json
+           ${CMAKE_CURRENT_BINARY_DIR}/sha512.json
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/blake2b.json
+        ${CMAKE_CURRENT_BINARY_DIR}/blake2b.json
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/sha256.json
+        ${CMAKE_CURRENT_BINARY_DIR}/sha256.json
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/sha512.json
-        $<TARGET_FILE_DIR:unit_tests>
+        ${CMAKE_CURRENT_BINARY_DIR}/sha512.json
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/blake2b.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/sha256.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/sha512.json
 )
+
+add_custom_target(copy_json_files ALL
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/blake2b.json
+            ${CMAKE_CURRENT_BINARY_DIR}/sha256.json
+            ${CMAKE_CURRENT_BINARY_DIR}/sha512.json
+)
+
+add_dependencies(unit_tests copy_json_files)

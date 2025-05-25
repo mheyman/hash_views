@@ -79,6 +79,7 @@ namespace sph::ranges::views::detail
         std::ranges::const_iterator_t<R> to_hash_current_;
         std::ranges::const_sentinel_t<R> to_hash_end_;
         T value_;
+        mutable bool complete_{ false };
     public:
         /**
          * Initialize a new instance of the hash_verify_view::iterator
@@ -92,7 +93,7 @@ namespace sph::ranges::views::detail
          * in the output range is reached.
          */
         hash_iterator(std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end, size_t target_hash_size)
-            : hash_{ std::make_unique<hash_processor_t>(target_hash_size) }
+            : hash_{ std::make_unique<hash_processor_t>(get_target_hash_size<T, A>(target_hash_size)) }
             , to_hash_current_(std::move(begin))
             , to_hash_end_(std::move(end))
             , value_{ hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); }) }
@@ -135,9 +136,13 @@ namespace sph::ranges::views::detail
          */
         auto operator++(int) -> hash_iterator&
         {
-            verify_can_hash();
             auto ret{ *this };
-            value_ = hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); });
+            if (!complete_)
+            {
+                verify_can_hash();
+                value_ = hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); });
+            }
+
             return ret;
         }
 
@@ -147,9 +152,23 @@ namespace sph::ranges::views::detail
          */
         auto operator++() -> hash_iterator&
         {
-            verify_can_hash();
-            value_ = hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); });
+            if (!complete_)
+            {
+                verify_can_hash();
+                value_ = hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); });
+            }
+
             return *this;
+        }
+
+        /**
+         * Gets the current hashed value.
+         * @return The current hashed value.
+         */
+        auto operator*() const -> output_type
+        {
+            complete_ = hash_->complete();
+            return value_;
         }
 
         /**
@@ -191,18 +210,9 @@ namespace sph::ranges::views::detail
          */
         auto equals(const hash_sentinel<R, T, A, S, IS>&) const noexcept -> bool
         {
-            verify_can_hash();
-            return hash_->complete();
+            return complete_;
         }
 
-        /**
-         * Gets the current hashed value.
-         * @return The current hashed value.
-         */
-        auto operator*() const -> output_type
-        {
-            return value_;
-        }
 
         auto operator==(const hash_iterator& other) const noexcept -> bool { return equals(other); }
         auto operator==(const hash_sentinel<R, T, A, S, IS>& s) const noexcept -> bool { return equals(s); }
@@ -229,6 +239,16 @@ namespace sph::ranges::views::detail
                 throw std::runtime_error("Only one copy of the hash iterator can hash. You probably made a copy of the iterator and tried to use it. Moving the iterator is fine.");
             }
         }
+
+        auto verify_can_increment() const -> void
+        {
+            verify_can_hash();
+            if (complete_)
+            {
+                throw std::runtime_error("Attempt to increment past end of hash.");
+            }
+        }
+
 
         auto input_complete() -> bool
         {
