@@ -1,8 +1,6 @@
 #pragma once
 #include <type_traits>
-#include <sph/hash_algorithm.h>
 #include <sph/hash_style.h>
-#include <sph/ranges/views/detail/get_target_hash_size.h>
 #include <sph/ranges/views/detail/process_util.h>
 
 namespace sph

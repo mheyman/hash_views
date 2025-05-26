@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 namespace sph::ranges::views::detail
 {
     template<typename T, sph::hash_algorithm A>

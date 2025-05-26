@@ -4,6 +4,7 @@
 #include <sph/hash_algorithm.h>
 #include <sph/hash_style.h>
 #include <sph/ranges/views/detail/blake2b.h>
+#include <sph/ranges/views/detail/get_target_hash_size.h>
 #include <sph/ranges/views/detail/hash_processor.h>
 #include <sph/ranges/views/detail/sha256.h>
 #include <sph/ranges/views/detail/sha512.h>
