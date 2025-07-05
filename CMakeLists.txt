@@ -7,7 +7,7 @@ if(DEVELOPER_MODE)
   list(APPEND VCPKG_MANIFEST_FEATURES "tests")
 endif()
 
-project (hash_stream VERSION 0.0.1 LANGUAGES CXX)
+project (hash_view VERSION 0.0.1 LANGUAGES CXX)
 
 # Include sub-projects.
 add_subdirectory ("hash")

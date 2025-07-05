@@ -22,7 +22,7 @@ namespace sph::ranges::views::detail
         {
             if (!done())
             {
-                throw std::runtime_error("bad call to rolling_buffer::next(). done(element_size, target_hash_size) was not called yet.");
+                throw std::runtime_error("bad call to rolling_buffer::next(). done(element_size, max_hash_size) was not called yet.");
             }
 
             if (data_current_ == data_end_)
@@ -40,7 +40,7 @@ namespace sph::ranges::views::detail
         {
             if (!done())
             {
-                throw std::runtime_error("bad call to rolling_buffer::hash_positions(). done(element_size, target_hash_size) was not called yet.");
+                throw std::runtime_error("bad call to rolling_buffer::hash_positions(). done(element_size, max_hash_size) was not called yet.");
             }
 
             return { data_end_, end_ };

@@ -4,18 +4,12 @@
 #include <sph/hash_algorithm.h>
 #include <sph/hash_style.h>
 #include <sph/ranges/views/detail/blake2b.h>
-#include <sph/ranges/views/detail/get_target_hash_size.h>
+#include <sph/ranges/views/detail/get_hash_size.h>
 #include <sph/ranges/views/detail/hash_processor.h>
 #include <sph/ranges/views/detail/sha256.h>
 #include <sph/ranges/views/detail/sha512.h>
 #include <sph/ranges/views/detail/rolling_buffer.h>
 #include <sodium/crypto_generichash_blake2b.h>
-
-namespace sph
-{
-    enum class hash_style;
-    enum class hash_algorithm;
-}
 
 namespace sph::ranges::views::detail
 {
@@ -83,18 +77,17 @@ namespace sph::ranges::views::detail
         mutable bool complete_{ false };
     public:
         /**
-         * Initialize a new instance of the hash_verify_view::iterator
-         * class.
+         * Initialize a new instance of the hash_iterator class.
          * @param begin The start of the input range to hash.
          * @param end The end of the input range.
-         * @param target_hash_size The size of the hash to create. May be 
-         * bigger if the size of the output type causes it to grow. Zero gives
-         * largest size available. If the output type is too large, the hash 
-         * may not be storable and an exception will be thrown when that point
-         * in the output range is reached.
+         * @param hash_byte_count The size of the hash to create. Zero gives
+         * largest size available. If the size of the output is greater than 1
+         * and the hash style doesn't include padding, the hash may not be
+         * storable and an exception will be thrown when that point in the
+         * output range is reached.
          */
-        hash_iterator(std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end, size_t target_hash_size)
-            : hash_{ std::make_unique<hash_processor_t>(get_target_hash_size<T, A>(target_hash_size)) }
+        hash_iterator(std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end, size_t hash_byte_count)
+            : hash_{ std::make_unique<hash_processor_t>(get_target_hash_size<T, A>(hash_byte_count)) }
             , to_hash_current_(std::move(begin))
             , to_hash_end_(std::move(end))
             , value_{ hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); }) }

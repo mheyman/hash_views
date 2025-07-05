@@ -5,7 +5,7 @@ namespace sph
     template<hash_algorithm A>
     struct hash_param
     {
-        static constexpr auto hash_size() -> size_t
+        static constexpr auto hash_byte_count() -> size_t
         {
             if constexpr (A == hash_algorithm::sha256)
             {

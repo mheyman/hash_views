@@ -21,7 +21,8 @@ namespace sph::ranges::views::detail
     {
         { T{ std::declval<size_t>() } };
         { hash.target_hash_size() } -> std::same_as<size_t>;
-        { hash.hash() } -> std::same_as<std::span<const uint8_t, T::hash_size>>;
+        requires std::ranges::range<decltype(hash.hash())>;
+        requires std::is_same_v<std::remove_cvref_t<std::ranges::range_value_t<decltype(hash.hash())>>, uint8_t >;
         { hash.update(chunk) } -> std::same_as<void>;
         { hash.final(final_data) } -> std::same_as<void>;
     };
