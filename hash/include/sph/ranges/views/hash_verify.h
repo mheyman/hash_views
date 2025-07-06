@@ -1,6 +1,7 @@
 #pragma once
 #include <ranges>
 #include <sph/hash_algorithm.h>
+#include <sph/ranges/views/detail/single_bool_iterator.h>
 
 namespace sph::ranges::views
 {
@@ -34,45 +35,9 @@ namespace sph::ranges::views
                     : sph::ranges::views::detail::iterate_style::no_appended_hash;
             using input_iterator = detail::hash_iterator<R, input_type, A, S, iterate_style>;
             using input_sentinel = detail::hash_sentinel<R, input_type, A, S, iterate_style>;
-            class bool_sentinel;
-            class bool_iterator
-            {
-                bool value_;
-                bool done_{ false };
-            public:
-                using iterator_concept = std::input_iterator_tag;
-                using iterator_category = std::input_iterator_tag;
-                using difference_type = std::ptrdiff_t;
-                using pointer = const bool*;
-                using reference = const bool&;
-                explicit bool_iterator(bool value) : value_{ value } {}
-                auto operator++() -> bool_iterator&
-                {
-                    done_ = true;
-                    return *this;
-                }
-                auto operator++(int) -> bool_iterator&
-                {
-                    done_ = true;
-                    return *this;
-                }
-                auto operator*() const -> bool { return value_; }
-                auto operator==(const bool_iterator& other) const noexcept -> bool { return done_ == other.done_; }
-                auto operator==(const bool_sentinel& ) const noexcept -> bool { return done_; }
-                auto operator!=(const bool_iterator& other) const noexcept -> bool { return done_ == other.done_; }
-                auto operator!=(const bool_sentinel& ) const noexcept -> bool { return !done_; }
-            };
-
-            class bool_sentinel
-            {
-                auto operator==(const bool_sentinel& /*other*/) const -> bool { return true; }
-                auto operator==(const bool_iterator& i) const -> bool { return i == *this; }
-                auto operator!=(const bool_sentinel& /*other*/) const -> bool { return false; }
-                auto operator!=(const bool_iterator& i) const -> bool { return i != *this; }
-            };
         public:
-            using iterator = bool_iterator;
-            using sentinel = bool_sentinel;
+            using iterator = single_bool_iterator;
+            using sentinel = single_bool_sentinel;
 
             /**
              * Initialize a new instance of the hash_verify_view class.
@@ -80,7 +45,9 @@ namespace sph::ranges::views
              * Provides a begin() iterator and end() sentinel over the
              * verified view of the given input range.
              *
+             * @param target_hash_size the size (in bytes) of the hash.
              * @param input the range to verify.
+             * @param hash the hash to compare against.
              */
             template<sph::hash_style HS = S>
                 requires (HS == sph::hash_style::separate)
@@ -88,6 +55,17 @@ namespace sph::ranges::views
                 : verify_ok_{verify(target_hash_size, std::forward<R>(input), std::forward<H>(hash))}
             {}
 
+            /**
+             * Initialize a new instance of the hash_verify_view class.
+             *
+             * Provides a begin() iterator and end() sentinel over the
+             * verified view of the given input range.
+             *
+             * The hash is appended to the input range.
+             *
+             * @param target_hash_size the size (in bytes) of the hash.
+             * @param input the range to verify.
+             */
             template<sph::hash_style HS = S>
                 requires (HS == sph::hash_style::append || S == sph::hash_style::append_padded)
             hash_verify_view(size_t target_hash_size, R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
@@ -101,9 +79,11 @@ namespace sph::ranges::views
             auto operator=(hash_verify_view&&o) noexcept -> hash_verify_view& = default;
 
 
-            iterator begin() const { return bool_iterator(verify_ok_); }
+            [[nodiscard]] auto begin() -> iterator { return iterator(verify_ok_); }
+            [[nodiscard]] auto begin() const -> iterator { return iterator(verify_ok_); }
 
-            sentinel end() const { return sentinel{}; }
+            [[nodiscard]] auto end() -> sentinel { return sentinel{}; }
+            [[nodiscard]] auto end() const -> sentinel { return sentinel{}; }
         private:
 
             /**
@@ -242,17 +222,18 @@ namespace sph::views
     }
 
     /**
- * A range adaptor that represents view of an underlying single-element sequence of the hash verification.
- *
- * @tparam A The hash algorithm
- * @param hash The hash verified against.
- * @param target_hash_size the minimum size in bytes of the hash created.
- * @return A functor that takes a hashed+hash range or separate hashed and hash ranges and returns a view of the verification status.
- */
+     * A range adaptor that represents view of an underlying single-element sequence of the hash verification.
+     *
+     * @tparam A The hash algorithm
+     * @param hash The hash verified against.
+     * @param target_hash_size the minimum size in bytes of the hash created.
+     * @return A functor that takes a hashed+hash range or separate hashed and hash ranges and returns a view of the verification status.
+     */
     template<sph::hash_algorithm A, std::ranges::viewable_range H>
-    auto hash_verify(H&& hash, size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<A>
+    auto hash_verify(H&& hash, size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_hash_fn<A, H>
     {
         return sph::ranges::views::detail::hash_verify_hash_fn<A, H>{std::forward<H>(hash), target_hash_size};
     }
 
 }
+

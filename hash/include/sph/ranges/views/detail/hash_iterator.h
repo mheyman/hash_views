@@ -87,7 +87,7 @@ namespace sph::ranges::views::detail
          * output range is reached.
          */
         hash_iterator(std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end, size_t hash_byte_count)
-            : hash_{ std::make_unique<hash_processor_t>(get_target_hash_size<T, A>(hash_byte_count)) }
+            : hash_{ std::make_unique<hash_processor_t>(get_hash_size<A>(hash_byte_count)) }
             , to_hash_current_(std::move(begin))
             , to_hash_end_(std::move(end))
             , value_{ hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); }) }
@@ -206,7 +206,6 @@ namespace sph::ranges::views::detail
         {
             return complete_;
         }
-
 
         auto operator==(const hash_iterator& other) const noexcept -> bool { return equals(other); }
         auto operator==(const hash_sentinel<R, T, A, S, IS>& s) const noexcept -> bool { return equals(s); }

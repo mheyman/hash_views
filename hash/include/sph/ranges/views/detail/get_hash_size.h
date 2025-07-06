@@ -14,15 +14,15 @@ namespace sph::ranges::views::detail
     template<sph::hash_algorithm A>
     auto static constexpr get_hash_size(size_t hash_size) -> size_t
     {
-        if (hash_size > sph::hash_param<A>::hash_size())
+        if (hash_size > sph::hash_param<A>::hash_byte_count())
         {
-            throw std::invalid_argument(std::format("Hash size {} is larger than maximum hash size {}", hash_size, sph::hash_param<A>::hash_size()));
+            throw std::invalid_argument(std::format("Hash size {} is larger than maximum hash size {}", hash_size, sph::hash_param<A>::hash_byte_count()));
         }
 
         if (hash_size == 0)
         {
             // the actual hash size is the maximum hash size.
-            return sph::hash_param<A>::hash_size();
+            return sph::hash_param<A>::hash_byte_count();
         }
 
         // The last value could be too big, and we won't know until we get there.
