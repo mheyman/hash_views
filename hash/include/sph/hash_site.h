@@ -3,11 +3,9 @@
 
 namespace sph
 {
-    enum class hash_style : uint8_t
+    enum class hash_site : uint8_t
     {
         append,
-        append_padded,
         separate,
-        separate_padded,
     };
 }
