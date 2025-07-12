@@ -31,12 +31,12 @@ namespace sph::ranges::views
             bool verify_ok_{ false };
 
             using input_type = std::remove_cvref_t<std::ranges::range_value_t<R>>;
-            static constexpr sph::ranges::views::detail::iterate_style iterate_style =
+            static constexpr sph::ranges::views::detail::end_of_input iterate_style =
                 S == sph::hash_site::append 
-                    ? sph::ranges::views::detail::iterate_style::skip_appended_hash 
-                    : sph::ranges::views::detail::iterate_style::no_appended_hash;
-            using input_iterator = detail::hash_iterator<R, input_type, A, S, iterate_style>;
-            using input_sentinel = detail::hash_sentinel<R, input_type, A, S, iterate_style>;
+                    ? sph::ranges::views::detail::end_of_input::skip_appended_hash
+                    : sph::ranges::views::detail::end_of_input::no_appended_hash;
+            using input_iterator = detail::hash_iterator<R, input_type, A, F, S, iterate_style>;
+            using input_sentinel = detail::hash_sentinel<R, input_type, A, F, S, iterate_style>;
         public:
             using iterator = single_bool_iterator;
             using sentinel = single_bool_sentinel;

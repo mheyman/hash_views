@@ -1,7 +1,6 @@
 #pragma once
 #include <array>
 #include <ranges>
-#include <sph/hash_style.h>
 #include <sph/ranges/views/detail/process_util.h>
 
 namespace sph::ranges::views::detail::concat

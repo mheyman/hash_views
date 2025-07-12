@@ -2,7 +2,8 @@
 #include <tuple>
 #include <type_traits>
 #include <sph/hash_algorithm.h>
-#include <sph/hash_style.h>
+#include <sph/hash_format.h>
+#include <sph/hash_site.h>
 #include <sph/ranges/views/detail/blake2b.h>
 #include <sph/ranges/views/detail/get_hash_size.h>
 #include <sph/ranges/views/detail/hash_processor.h>
@@ -13,7 +14,7 @@
 
 namespace sph::ranges::views::detail
 {
-    enum class iterate_style : uint8_t
+    enum class end_of_input : uint8_t
     {
         no_appended_hash = 0,
         skip_appended_hash = 1
@@ -24,7 +25,7 @@ namespace sph::ranges::views::detail
      * Forward declaration of the iterator end-of-sequence
      * sentinel.
      */
-    template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_style S, iterate_style IS>
+    template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
         requires std::ranges::input_range<R>&& std::is_standard_layout_v<T>&& std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
     struct hash_sentinel;
 
@@ -36,12 +37,11 @@ namespace sph::ranges::views::detail
      * @tparam T The output type.
      * @tparam A The hash algorithm to use.
      * @tparam S The hash style to use (append to hashed data or separate from hashed data). If sizeof(T) == 1, padded hashes are not acceptable.
-     * @tparam IS The iterate style to use (skip appended hash or no appended hash).
+     * @tparam E The iterate style to use (skip appended hash or no appended hash).
      */
-    template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_style S, iterate_style IS>
+    template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
         requires std::ranges::input_range<R> && std::is_standard_layout_v<T>
         && std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
-            && (sizeof(T) > 1 || S == sph::hash_style::separate || S == sph::hash_style::append)
     class hash_iterator  // NOLINT(clang-diagnostic-padded)
     {
     public:
@@ -57,10 +57,10 @@ namespace sph::ranges::views::detail
         struct empty {};
         struct input_value_with_position { input_type value; size_t position; };
         using input_value_t = std::conditional_t < sizeof(input_type) == 1, empty, input_value_with_position>;
-        using hash_processor_t = hash_processor<T, S, std::conditional_t<A == sph::hash_algorithm::blake2b, detail::blake2b, 
+        using hash_processor_t = hash_processor<T, S, F, std::conditional_t<A == sph::hash_algorithm::blake2b, detail::blake2b, 
             std::conditional_t<A == sph::hash_algorithm::sha512, detail::sha512,
             std::conditional_t<A == sph::hash_algorithm::sha256, detail::sha256, void>>>>;
-        using rolling_buffer_t = std::conditional<IS == iterate_style::no_appended_hash, empty, std::conditional<IS == iterate_style::skip_appended_hash, rolling_buffer<T, A>, void>>;
+        using rolling_buffer_t = std::conditional<E == end_of_input::no_appended_hash, empty, std::conditional<E == end_of_input::skip_appended_hash, rolling_buffer<T, A>, void>>;
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunknown-attributes"
@@ -94,16 +94,16 @@ namespace sph::ranges::views::detail
         {
         }
 
-        hash_iterator(hash_iterator<R, T, A, S, IS>& o) noexcept
+        hash_iterator(hash_iterator<R, T, A, F, S, E>& o) noexcept
             : hash_{ nullptr } // only one can hash at a time
             , to_hash_current_{o.to_hash_current_}
             , to_hash_end_{ o.to_hash_end_ }
             , value_{ o.value_ }
         {
         }
-        hash_iterator(hash_iterator<R, T, A, S, IS>&&) noexcept = default;
+        hash_iterator(hash_iterator<R, T, A, F, S, E>&&) noexcept = default;
         ~hash_iterator() = default;
-        auto operator=(hash_iterator<R, T, A, S, IS> const& o) noexcept -> hash_iterator&
+        auto operator=(hash_iterator<R, T, A, F, S, E> const& o) noexcept -> hash_iterator&
         {
             if (&o != this)
             {
@@ -202,15 +202,15 @@ namespace sph::ranges::views::detail
          * Compare the provided sentinel for equality.
          * @return True if at the end of the hashed view.
          */
-        auto equals(const hash_sentinel<R, T, A, S, IS>&) const noexcept -> bool
+        auto equals(const hash_sentinel<R, T, A, F, S, E>&) const noexcept -> bool
         {
             return complete_;
         }
 
         auto operator==(const hash_iterator& other) const noexcept -> bool { return equals(other); }
-        auto operator==(const hash_sentinel<R, T, A, S, IS>& s) const noexcept -> bool { return equals(s); }
+        auto operator==(const hash_sentinel<R, T, A, F, S, E>& s) const noexcept -> bool { return equals(s); }
         auto operator!=(const hash_iterator& other) const noexcept -> bool { return !equals(other); }
-        auto operator!=(const hash_sentinel<R, T, A, S, IS>& s) const noexcept -> bool { return !equals(s); }
+        auto operator!=(const hash_sentinel<R, T, A, F, S, E>& s) const noexcept -> bool { return !equals(s); }
 
     private:
         static auto input_init()
@@ -295,7 +295,7 @@ namespace sph::ranges::views::detail
 
         auto next_byte() -> std::tuple<bool, uint8_t>
         {
-            if constexpr (IS == iterate_style::skip_appended_hash)
+            if constexpr (E == end_of_input::skip_appended_hash)
             {
                 if (rolling_buffer_.done())
                 {
@@ -326,13 +326,13 @@ namespace sph::ranges::views::detail
         }
     };
 
-    template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_style S, iterate_style IS>
+    template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
         requires std::ranges::input_range<R>&& std::is_standard_layout_v<T>&& std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
     struct hash_sentinel
     {
         auto operator==(const hash_sentinel& /*other*/) const noexcept -> bool { return true; }
-        auto operator==(const hash_iterator<R, T, A, S, IS>& i) const noexcept -> bool { return i.equals(*this); }
+        auto operator==(const hash_iterator<R, T, A, F, S, E>& i) const noexcept -> bool { return i.equals(*this); }
         auto operator!=(const hash_sentinel& /*other*/) const noexcept -> bool { return false; }
-        auto operator!=(const hash_iterator<R, T, A, S, IS>& i) const noexcept -> bool { return !i.equals(*this); }
+        auto operator!=(const hash_iterator<R, T, A, F, S, E>& i) const noexcept -> bool { return !i.equals(*this); }
     };
 }

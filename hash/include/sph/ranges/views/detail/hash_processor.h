@@ -1,6 +1,7 @@
 #pragma once
 #include <type_traits>
-#include <sph/hash_style.h>
+#include <sph/hash_site.h>
+#include <sph/hash_format.h>
 #include <sph/ranges/views/detail/padded_hash.h>
 #include <sph/ranges/views/detail/process_util.h>
 
@@ -24,12 +25,12 @@ namespace sph::ranges::views::detail
      * @tparam S The hash style. Append, append padded, separate, or separate padded.
      * @tparam H The hash. Sha256, sha512, black2b.
      */
-    template<typename O, sph::hash_style S, basic_hash H>
+    template<typename O, sph::hash_site S, sph::hash_format F, basic_hash H>
     class hash_processor  // NOLINT(clang-diagnostic-padded)
     {
-        static constexpr bool return_inputs{ S == sph::hash_style::append || S == sph::hash_style::append_padded };
+        static constexpr bool return_inputs{ S == sph::hash_site::append};
         static constexpr bool single_byte{ sizeof(O) == 1 };
-        static constexpr bool pad_hash{ S == sph::hash_style::append_padded || S == sph::hash_style::separate_padded };
+        static constexpr bool pad_hash{ F == sph::hash_format::padded};
         using hash_t = std::conditional_t<pad_hash, padded_hash<O, H>, H>;
         using hash_begin_t = decltype(std::declval<hash_t>().hash().begin());
         using hash_end_t = decltype(std::declval<hash_t>().hash().begin());
