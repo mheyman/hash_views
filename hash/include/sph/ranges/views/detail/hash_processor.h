@@ -41,9 +41,21 @@ namespace sph::ranges::views::detail
         std::array<uint8_t, H::chunk_size> chunk_{};
         typename std::array<uint8_t, H::chunk_size>::iterator chunk_current_{ chunk_.begin() };
         struct empty {};
+        template <bool SingleByte, typename ValueBufT>
+        struct value_buf_current_type_helper;
+
+        template <typename ValueBufT>
+        struct value_buf_current_type_helper<true, ValueBufT> {
+            using type = empty; 
+        };
+
+        template <typename ValueBufT>
+        struct value_buf_current_type_helper<false, ValueBufT> {
+            using type = decltype(std::declval<ValueBufT>().begin());
+        };
         using value_t = std::conditional_t<single_byte, empty, O>;
         using value_buf_t = std::conditional_t<single_byte, empty, std::span<uint8_t, sizeof(value_t)>>;
-        using value_buf_current_t = std::conditional_t<single_byte, empty, typename value_buf_t::iterator>;
+        using value_buf_current_t = typename value_buf_current_type_helper<single_byte, value_buf_t>::type;
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunknown-attributes"
@@ -161,13 +173,15 @@ namespace sph::ranges::views::detail
                     return O{};
                 }
 
-                if (std::distance(hash_current_, hash_.hash().end()) < sizeof(O))
+                fmt::print("hash_processor::process: input complete. hash remaining: {}\n", std::distance(hash_current_, hash_.hash().end()));
+                if (static_cast<size_t>(std::distance(hash_current_, hash_.hash().end())) < sizeof(O))
                 {
                     auto hash_size{ static_cast<size_t>(std::ranges::distance(hash_.hash())) };
                     throw std::runtime_error(
                         std::format(
-                            "Cannot handle output type size of {} bytes. Not enough hash data to fill the output value. Expected {} bytes, only {}{} hash bytes available.",
+                            "Cannot handle output type size of {} bytes. {} hash bytes remaining. Not enough hash data to fill the output value. Expected {} bytes, only {}{} hash bytes available.",
                             sizeof(O),
+                            std::distance(hash_current_, hash_.hash().end()),
                             hash_.target_hash_size(),
                             hash_.target_hash_size() < hash_size ? std::format(" of {}", hash_size) : std::format(""),
                             hash_size));

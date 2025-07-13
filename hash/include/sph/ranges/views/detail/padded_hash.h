@@ -28,6 +28,11 @@ namespace sph::ranges::views::detail::concat
         iterator_2 second_end_;
         // 0 = in first, 1 = in second, 2 = end
         int which_;
+        size_t total_;
+        auto remaining() const -> size_t
+        {
+            return (which_ == 0 ? std::distance(first_, first_end_) : 0) + std::distance(second_, second_end_);
+        }
 
     public:
         using iterator_concept = std::forward_iterator_tag;
@@ -39,11 +44,13 @@ namespace sph::ranges::views::detail::concat
 
         first_second_iterator() = default;
         first_second_iterator(iterator_1 first, iterator_1 first_end, iterator_2 second, iterator_2 second_end, int which)
-            : first_(first), first_end_(first_end), second_(second), second_end_(second_end), which_(which) {
+            : first_(first), first_end_(first_end), second_(second), second_end_(second_end), which_(which), total_{remaining()}
+        {
         }
 
         auto operator*() const -> reference
         {
+            fmt::print("first_second_iterator: {} of {}\n", remaining(), total_);
             return which_ == 0 ? *first_ : *second_;
         }
 
@@ -149,6 +156,11 @@ namespace sph::ranges::views::detail::concat
             );
         }
 
+        auto size() const -> size_t
+        {
+            return std::ranges::distance(first_) + std::ranges::distance(second_);
+        }
+
     };
 }
 
@@ -163,7 +175,7 @@ namespace sph::ranges::views::detail
     public:
         padded_hash(size_t hash_size)
             : hash_{ hash_size }
-            , target_hash_size_ {hash_.size() + 1}
+            , target_hash_size_ {hash_.target_hash_size() + 1}
         {
         }
 
