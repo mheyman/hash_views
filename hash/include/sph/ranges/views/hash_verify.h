@@ -93,6 +93,20 @@ namespace sph::ranges::views
              */
             template<typename Hash>
             static constexpr auto hash_to_byte_vector(Hash&& hash) -> std::vector<uint8_t>
+            requires (sizeof(std::remove_cvref_t<std::ranges::range_value_t<Hash>>) == 1)
+            {
+                using value_t = std::remove_cvref_t<std::ranges::range_value_t<Hash>>;
+                return std::forward<Hash>(hash)
+                    | std::views::transform([](value_t v) -> uint8_t
+                        {
+                            return static_cast<uint8_t>(v);
+                        })
+                    | std::ranges::to<std::vector>();
+            }
+
+            template<typename Hash>
+            static constexpr auto hash_to_byte_vector(Hash&& hash) -> std::vector<uint8_t>
+            requires (sizeof(std::remove_cvref_t<std::ranges::range_value_t<Hash>>) > 1)
             {
                 using value_t = std::remove_cvref_t<std::ranges::range_value_t<Hash>>;
                 return std::forward<Hash>(hash)

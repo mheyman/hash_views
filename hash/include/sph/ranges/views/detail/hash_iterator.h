@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <tuple>
 #include <type_traits>
 #include <sph/hash_algorithm.h>
@@ -75,6 +76,7 @@ namespace sph::ranges::views::detail
         std::ranges::const_iterator_t<R> to_hash_current_;
         std::ranges::const_sentinel_t<R> to_hash_end_;
         T value_;
+        mutable bool hash_read_complete_{ false };
         mutable bool complete_{ false };
     public:
         /**
@@ -132,10 +134,15 @@ namespace sph::ranges::views::detail
         auto operator++(int) -> hash_iterator&
         {
             auto ret{ *this };
-            if (!complete_)
+            if (!hash_read_complete_)
             {
                 verify_can_hash();
                 value_ = hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); });
+                hash_read_complete_ = hash_->complete();
+            }
+            else
+            {
+                complete_ = true;
             }
 
             return ret;
@@ -147,10 +154,15 @@ namespace sph::ranges::views::detail
          */
         auto operator++() -> hash_iterator&
         {
-            if (!complete_)
+            if (!hash_read_complete_)
             {
                 verify_can_hash();
                 value_ = hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); });
+                hash_read_complete_ = hash_->complete();
+            }
+            else
+            {
+                complete_ = true;
             }
 
             return *this;
@@ -162,7 +174,7 @@ namespace sph::ranges::views::detail
          */
         auto operator*() const -> output_type
         {
-            complete_ = hash_->complete();
+            assert(!complete_ && "Cannot dereference end of hash iterator.");
             return value_;
         }
 
@@ -230,7 +242,7 @@ namespace sph::ranges::views::detail
         auto verify_can_increment() const -> void
         {
             verify_can_hash();
-            if (complete_)
+            if (hash_read_complete_)
             {
                 throw std::runtime_error("Attempt to increment past end of hash.");
             }
