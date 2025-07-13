@@ -161,6 +161,318 @@ TEST_CASE("hash.vectors")
         auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::sha512>(test_vector.outlen) | std::ranges::to<std::vector>();
         CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed sha512 on test vector {}", test_name, index));
     }
+}
+
+TEST_CASE("hash.overloads")
+{
+    using sph::hash_algorithm;
+    using sph::hash_format;
+    using sph::hash_site;
+    using sph::views::hash;
+
+    std::vector<uint8_t> hello_world{ 'h','e','l','l','o',' ','w','o','r','l','d' };
+    size_t hash_size = 32;
+
+    // Fully specified
+    auto ref = hello_world
+        | hash<hash_algorithm::blake2b, uint8_t, hash_format::raw, hash_site::separate>(hash_size)
+        | std::ranges::to<std::vector>();
+
+    {
+        // All overloads with explicit types, all should match ref
+        auto o1 = hello_world | hash<hash_algorithm::blake2b, uint8_t, hash_format::raw, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o1 == ref, "Overload: <A, T, F, S> failed");
+
+        auto o2 = hello_world | hash<hash_algorithm::blake2b, uint8_t, hash_site::separate, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o2 == ref, "Overload: <A, T, S, F> failed");
+
+        auto o3 = hello_world | hash<hash_algorithm::blake2b, hash_site::separate, uint8_t, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o3 == ref, "Overload: <A, S, T, F> failed");
+
+        auto o4 = hello_world | hash<hash_algorithm::blake2b, hash_site::separate, hash_format::raw, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o4 == ref, "Overload: <A, S, F, T> failed");
+
+        auto o5 = hello_world | hash<hash_algorithm::blake2b, hash_format::raw, uint8_t, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o5 == ref, "Overload: <A, F, T, S> failed");
+
+        auto o6 = hello_world | hash<hash_algorithm::blake2b, hash_format::raw, hash_site::separate, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o6 == ref, "Overload: <A, F, S, T> failed");
+
+        auto o7 = hello_world | hash<hash_site::separate, hash_algorithm::blake2b, uint8_t, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o7 == ref, "Overload: <S, A, T, F> failed");
+
+        auto o8 = hello_world | hash<hash_site::separate, hash_algorithm::blake2b, hash_format::raw, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o8 == ref, "Overload: <S, A, F, T> failed");
+
+        auto o9 = hello_world | hash<hash_site::separate, hash_format::raw, hash_algorithm::blake2b, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o9 == ref, "Overload: <S, F, A, T> failed");
+
+        auto o10 = hello_world | hash<hash_site::separate, hash_format::raw, uint8_t, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o10 == ref, "Overload: <S, F, T, A> failed");
+
+        auto o11 = hello_world | hash<hash_site::separate, uint8_t, hash_algorithm::blake2b, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o11 == ref, "Overload: <S, T, A, F> failed");
+
+        auto o12 = hello_world | hash<hash_site::separate, uint8_t, hash_format::raw, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o12 == ref, "Overload: <S, T, F, A> failed");
+
+        auto o13 = hello_world | hash<hash_format::raw, hash_algorithm::blake2b, uint8_t, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o13 == ref, "Overload: <F, A, T, S> failed");
+
+        auto o14 = hello_world | hash<hash_format::raw, hash_algorithm::blake2b, hash_site::separate, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o14 == ref, "Overload: <F, A, S, T> failed");
+
+        auto o15 = hello_world | hash<hash_format::raw, hash_site::separate, hash_algorithm::blake2b, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o15 == ref, "Overload: <F, S, A, T> failed");
+
+        auto o16 = hello_world | hash<hash_format::raw, hash_site::separate, uint8_t, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o16 == ref, "Overload: <F, S, T, A> failed");
+
+        auto o17 = hello_world | hash<hash_format::raw, uint8_t, hash_algorithm::blake2b, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o17 == ref, "Overload: <F, T, A, S> failed");
+
+        auto o18 = hello_world | hash<hash_format::raw, uint8_t, hash_site::separate, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o18 == ref, "Overload: <F, T, S, A> failed");
+
+        auto o19 = hello_world | hash<uint8_t, hash_algorithm::blake2b, hash_format::raw, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o19 == ref, "Overload: <T, A, F, S> failed");
+
+        auto o20 = hello_world | hash<uint8_t, hash_algorithm::blake2b, hash_site::separate, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o20 == ref, "Overload: <T, A, S, F> failed");
+
+        auto o21 = hello_world | hash<uint8_t, hash_site::separate, hash_algorithm::blake2b, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o21 == ref, "Overload: <T, S, A, F> failed");
+
+        auto o22 = hello_world | hash<uint8_t, hash_site::separate, hash_format::raw, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o22 == ref, "Overload: <T, S, F, A> failed");
+
+        auto o23 = hello_world | hash<uint8_t, hash_format::raw, hash_algorithm::blake2b, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o23 == ref, "Overload: <T, F, A, S> failed");
+
+        auto o24 = hello_world | hash<uint8_t, hash_format::raw, hash_site::separate, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o24 == ref, "Overload: <T, F, S, A> failed");
+    }
+    {
+        // uint8_t overloads with three explicit types, all should match ref
+        auto o1 = hello_world | hash<hash_algorithm::blake2b, uint8_t, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o1 == ref, "Overload: <A, T, F> failed");
+
+        auto o2 = hello_world | hash<hash_algorithm::blake2b, uint8_t, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o2 == ref, "Overload: <A, T, S> failed");
+
+        auto o3 = hello_world | hash<hash_algorithm::blake2b, hash_site::separate, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o3 == ref, "Overload: <A, S, T> failed");
+
+        auto o4 = hello_world | hash<hash_algorithm::blake2b, hash_site::separate, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o4 == ref, "Overload: <A, S, F> failed");
+
+        auto o5 = hello_world | hash<hash_algorithm::blake2b, hash_format::raw, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o5 == ref, "Overload: <A, F, T> failed");
+
+        auto o6 = hello_world | hash<hash_algorithm::blake2b, hash_format::raw, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o6 == ref, "Overload: <A, F, S> failed");
+
+        auto o7 = hello_world | hash<hash_site::separate, hash_algorithm::blake2b, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o7 == ref, "Overload: <S, A, T> failed");
+
+        auto o8 = hello_world | hash<hash_site::separate, hash_algorithm::blake2b, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o8 == ref, "Overload: <S, A, F> failed");
+
+        auto o9 = hello_world | hash<hash_site::separate, hash_format::raw, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o9 == ref, "Overload: <S, F, A> failed");
+
+        auto o10 = hello_world | hash<hash_site::separate, hash_format::raw, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o10 == ref, "Overload: <S, F, T> failed");
+
+        auto o11 = hello_world | hash<hash_site::separate, uint8_t, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o11 == ref, "Overload: <S, T, A> failed");
+
+        auto o12 = hello_world | hash<hash_site::separate, uint8_t, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o12 == ref, "Overload: <S, T, F> failed");
+
+        auto o13 = hello_world | hash<hash_format::raw, hash_algorithm::blake2b, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o13 == ref, "Overload: <F, A, T> failed");
+
+        auto o14 = hello_world | hash<hash_format::raw, hash_algorithm::blake2b, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o14 == ref, "Overload: <F, A, S> failed");
+
+        auto o15 = hello_world | hash<hash_format::raw, hash_site::separate, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o15 == ref, "Overload: <F, S, A> failed");
+
+        auto o16 = hello_world | hash<hash_format::raw, hash_site::separate, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o16 == ref, "Overload: <F, S, T> failed");
+
+        auto o17 = hello_world | hash<hash_format::raw, uint8_t, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o17 == ref, "Overload: <F, T, A> failed");
+
+        auto o18 = hello_world | hash<hash_format::raw, uint8_t, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o18 == ref, "Overload: <F, T, S> failed");
+
+        auto o19 = hello_world | hash<uint8_t, hash_algorithm::blake2b, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o19 == ref, "Overload: <T, A, F> failed");
+
+        auto o20 = hello_world | hash<uint8_t, hash_algorithm::blake2b, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o20 == ref, "Overload: <T, A, S> failed");
+
+        auto o21 = hello_world | hash<uint8_t, hash_site::separate, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o21 == ref, "Overload: <T, S, A> failed");
+
+        auto o22 = hello_world | hash<uint8_t, hash_site::separate, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o22 == ref, "Overload: <T, S, F> failed");
+
+        auto o23 = hello_world | hash<uint8_t, hash_format::raw, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o23 == ref, "Overload: <T, F, A> failed");
+
+        auto o24 = hello_world | hash<uint8_t, hash_format::raw, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o24 == ref, "Overload: <T, F, S> failed");
+    }
+    {
+        // uint8_t overloads with two explicit types, all should match ref
+        auto o1 = hello_world | hash<hash_algorithm::blake2b, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o1 == ref, "Overload: <A, T> failed");
+
+        auto o2 = hello_world | hash<hash_algorithm::blake2b, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o2 == ref, "Overload: <A, S> failed");
+
+        auto o3 = hello_world | hash<hash_algorithm::blake2b, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o3 == ref, "Overload: <A, F> failed");
+
+        auto o4 = hello_world | hash<hash_site::separate, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o4 == ref, "Overload: <S, A> failed");
+
+        auto o5 = hello_world | hash<hash_site::separate, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o5 == ref, "Overload: <S, F> failed");
+
+        auto o6 = hello_world | hash<hash_site::separate, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o6 == ref, "Overload: <S, T> failed");
+
+        auto o7 = hello_world | hash<hash_format::raw, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o7 == ref, "Overload: <F, A> failed");
+
+        auto o8 = hello_world | hash<hash_format::raw, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o8 == ref, "Overload: <F, S> failed");
+
+        auto o9 = hello_world | hash<hash_format::raw, uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o9 == ref, "Overload: <F, T> failed");
+
+        auto o10 = hello_world | hash<uint8_t, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o10 == ref, "Overload: <T, A> failed");
+
+        auto o11 = hello_world | hash<uint8_t, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o11 == ref, "Overload: <T, S> failed");
+
+        auto o12 = hello_world | hash<uint8_t, hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o12 == ref, "Overload: <T, F> failed");
+    }
+    {
+        // uint8_t overloads with one explicit type, all should match ref
+        auto o1 = hello_world | hash<hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o1 == ref, "Overload: <A> failed");
+
+        auto o2 = hello_world | hash<hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o2 == ref, "Overload: <S> failed");
+
+        auto o3 = hello_world | hash<hash_format::raw>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o3 == ref, "Overload: <F> failed");
+
+        auto o4 = hello_world | hash<uint8_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o4 == ref, "Overload: <T> failed");
+    }
+
+    auto o25 = hello_world | hash(hash_size) | std::ranges::to<std::vector>();
+    CHECK_MESSAGE(o25 == ref, "Overload: <> failed");
+
+}
+
+TEST_CASE("hash.to_size_t")
+{
+    using sph::hash_algorithm;
+    using sph::hash_format;
+    using sph::hash_site;
+    using sph::views::hash;
+
+    std::vector<uint8_t> hello_world{ 'h','e','l','l','o',' ','w','o','r','l','d' };
+    size_t hash_size = 32;
+
+    // Fully specified reference: size_t output, padded format
+    auto ref = hello_world
+        | hash<hash_algorithm::blake2b, size_t, hash_format::padded, hash_site::separate>(hash_size)
+        | std::ranges::to<std::vector>();
+
+    {
+        auto o1 = hello_world | hash<hash_algorithm::blake2b, size_t, hash_format::padded, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o1 == ref, "Overload: <A, T, F, S> failed");
+
+        auto o2 = hello_world | hash<hash_algorithm::blake2b, size_t, hash_site::separate, hash_format::padded>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o2 == ref, "Overload: <A, T, S, F> failed");
+
+        auto o3 = hello_world | hash<hash_algorithm::blake2b, hash_site::separate, size_t, hash_format::padded>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o3 == ref, "Overload: <A, S, T, F> failed");
+
+        auto o4 = hello_world | hash<hash_algorithm::blake2b, hash_site::separate, hash_format::padded, size_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o4 == ref, "Overload: <A, S, F, T> failed");
+
+        auto o5 = hello_world | hash<hash_algorithm::blake2b, hash_format::padded, size_t, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o5 == ref, "Overload: <A, F, T, S> failed");
+
+        auto o6 = hello_world | hash<hash_algorithm::blake2b, hash_format::padded, hash_site::separate, size_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o6 == ref, "Overload: <A, F, S, T> failed");
+
+        auto o7 = hello_world | hash<hash_site::separate, hash_algorithm::blake2b, size_t, hash_format::padded>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o7 == ref, "Overload: <S, A, T, F> failed");
+
+        auto o8 = hello_world | hash<hash_site::separate, hash_algorithm::blake2b, hash_format::padded, size_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o8 == ref, "Overload: <S, A, F, T> failed");
+
+        auto o9 = hello_world | hash<hash_site::separate, hash_format::padded, hash_algorithm::blake2b, size_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o9 == ref, "Overload: <S, F, A, T> failed");
+
+        auto o10 = hello_world | hash<hash_site::separate, hash_format::padded, size_t, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o10 == ref, "Overload: <S, F, T, A> failed");
+
+        auto o11 = hello_world | hash<hash_site::separate, size_t, hash_algorithm::blake2b, hash_format::padded>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o11 == ref, "Overload: <S, T, A, F> failed");
+
+        auto o12 = hello_world | hash<hash_site::separate, size_t, hash_format::padded, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o12 == ref, "Overload: <S, T, F, A> failed");
+
+        auto o13 = hello_world | hash<hash_format::padded, hash_algorithm::blake2b, size_t, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o13 == ref, "Overload: <F, A, T, S> failed");
+
+        auto o14 = hello_world | hash<hash_format::padded, hash_algorithm::blake2b, hash_site::separate, size_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o14 == ref, "Overload: <F, A, S, T> failed");
+
+        auto o15 = hello_world | hash<hash_format::padded, hash_site::separate, hash_algorithm::blake2b, size_t>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o15 == ref, "Overload: <F, S, A, T> failed");
+
+        auto o16 = hello_world | hash<hash_format::padded, hash_site::separate, size_t, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o16 == ref, "Overload: <F, S, T, A> failed");
+
+        auto o17 = hello_world | hash<hash_format::padded, size_t, hash_algorithm::blake2b, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o17 == ref, "Overload: <F, T, A, S> failed");
+
+        auto o18 = hello_world | hash<hash_format::padded, size_t, hash_site::separate, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o18 == ref, "Overload: <F, T, S, A> failed");
+
+        auto o19 = hello_world | hash<size_t, hash_algorithm::blake2b, hash_format::padded, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o19 == ref, "Overload: <T, A, F, S> failed");
+
+        auto o20 = hello_world | hash<size_t, hash_algorithm::blake2b, hash_site::separate, hash_format::padded>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o20 == ref, "Overload: <T, A, S, F> failed");
+
+        auto o21 = hello_world | hash<size_t, hash_site::separate, hash_algorithm::blake2b, hash_format::padded>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o21 == ref, "Overload: <T, S, A, F> failed");
+
+        auto o22 = hello_world | hash<size_t, hash_site::separate, hash_format::padded, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o22 == ref, "Overload: <T, S, F, A> failed");
+
+        auto o23 = hello_world | hash<size_t, hash_format::padded, hash_algorithm::blake2b, hash_site::separate>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o23 == ref, "Overload: <T, F, A, S> failed");
+
+        auto o24 = hello_world | hash<size_t, hash_format::padded, hash_site::separate, hash_algorithm::blake2b>(hash_size) | std::ranges::to<std::vector>();
+        CHECK_MESSAGE(o24 == ref, "Overload: <T, F, S, A> failed");
+    }
+
 
 }
 
@@ -191,7 +503,7 @@ TEST_CASE("hash_verify.vectors")
 }
 
 
-TEST_CASE("foo")
+TEST_CASE("hexstring_to_hex")
 {
     std::vector<uint8_t> foo {
         std::string_view{ "01A1" }

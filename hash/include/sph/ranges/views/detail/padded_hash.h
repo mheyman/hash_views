@@ -19,32 +19,36 @@ namespace sph::ranges::views::detail::concat
     std::same_as<std::ranges::range_value_t<R2>, uint8_t>
         class first_second_iterator
     {
-        using Iter1 = std::ranges::iterator_t<R1>;
-        using Iter2 = std::ranges::iterator_t<R2>;
+        using iterator_1 = std::ranges::iterator_t<R1>;
+        using iterator_2 = std::ranges::iterator_t<R2>;
 
-        Iter1 first_;
-        Iter1 first_end_;
-        Iter2 second_;
-        Iter2 second_end_;
+        iterator_1 first_;
+        iterator_1 first_end_;
+        iterator_2 second_;
+        iterator_2 second_end_;
         // 0 = in first, 1 = in second, 2 = end
         int which_;
 
     public:
+        using iterator_concept = std::forward_iterator_tag;
         using iterator_category = std::forward_iterator_tag;
         using value_type = uint8_t;
         using difference_type = std::ptrdiff_t;
         using pointer = const uint8_t*;
         using reference = const uint8_t&;
 
-        first_second_iterator(Iter1 first, Iter1 first_end, Iter2 second, Iter2 second_end, int which)
+        first_second_iterator() = default;
+        first_second_iterator(iterator_1 first, iterator_1 first_end, iterator_2 second, iterator_2 second_end, int which)
             : first_(first), first_end_(first_end), second_(second), second_end_(second_end), which_(which) {
         }
 
-        reference operator*() const {
+        auto operator*() const -> reference
+        {
             return which_ == 0 ? *first_ : *second_;
         }
 
-        first_second_iterator& operator++() {
+        auto operator++() -> first_second_iterator&
+        {
             if (which_ == 0) {
                 ++first_;
                 if (first_ == first_end_) {
@@ -60,13 +64,22 @@ namespace sph::ranges::views::detail::concat
             return *this;
         }
 
-        bool operator==(const first_second_iterator& other) const {
+        auto operator++(int) -> first_second_iterator
+        {
+            auto tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        auto operator==(const first_second_iterator& other) const -> bool
+        {
             return which_ == other.which_ &&
                 ((which_ == 0 && first_ == other.first_) ||
                     (which_ == 1 && second_ == other.second_) ||
                     (which_ == 2));
         }
-        bool operator!=(const first_second_iterator& other) const {
+        auto operator!=(const first_second_iterator& other) const -> bool
+        {
             return !(*this == other);
         }
     };
@@ -89,24 +102,53 @@ namespace sph::ranges::views::detail::concat
         R2 second_;
 
     public:
+        using iterator = first_second_iterator<R1, R2>;
+        using const_iterator = iterator;
+        using value_type = typename iterator::value_type;
+        using difference_type = typename iterator::difference_type;
+        using reference = typename iterator::reference;
+        using const_reference = reference;
+
         first_second_range(R1 first, R2 second)
             : first_(std::move(first)), second_(std::move(second)) {
         }
 
-        auto begin() const {
+        auto begin() const -> iterator
+        {
             return first_second_iterator<R1, R2>(
                 std::ranges::begin(first_), std::ranges::end(first_),
                 std::ranges::begin(second_), std::ranges::end(second_),
-                first_.empty() ? 1 : 0
+                first_.empty() ? (second_.empty() ? 2 : 1) : 0
             );
         }
-        auto end() const {
+
+        auto begin() -> iterator
+        {
+            return first_second_iterator<R1, R2>(
+                std::ranges::begin(first_), std::ranges::end(first_),
+                std::ranges::begin(second_), std::ranges::end(second_),
+                first_.empty() ? (second_.empty() ? 2 : 1) : 0
+            );
+        }
+
+        auto end() const -> iterator
+        {
             return first_second_iterator<R1, R2>(
                 std::ranges::end(first_), std::ranges::end(first_),
                 std::ranges::end(second_), std::ranges::end(second_),
                 2
             );
         }
+
+        auto end() -> iterator
+        {
+            return first_second_iterator<R1, R2>(
+                std::ranges::end(first_), std::ranges::end(first_),
+                std::ranges::end(second_), std::ranges::end(second_),
+                2
+            );
+        }
+
     };
 }
 
@@ -163,6 +205,11 @@ namespace sph::ranges::views::detail
         auto update(std::span<uint8_t const, H::chunk_size> const& chunk) -> void
         {
             hash_.update(chunk);
+        }
+
+        auto final(std::span<uint8_t const> const data) -> void
+        {
+            hash_.final(data);
         }
     private:
         /**

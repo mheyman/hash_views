@@ -3,6 +3,7 @@
 #include <sph/hash_algorithm.h>
 #include <sph/hash_format.h>
 #include <sph/hash_site.h>
+#include <sph/ranges/views/detail/hash_util.h>
 #include <sph/ranges/views/detail/hash_iterator.h>
 #include <sph/ranges/views/detail/get_hash_size.h>
 
@@ -22,7 +23,7 @@ namespace sph::ranges::views
          * @tparam A The hash algorithm to use.
          * @tparam S The hash style to use (append to hashed data or separate from hashed data).
          */
-        template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S>
+        template<sph::ranges::views::detail::hash_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S>
             requires std::ranges::input_range<R> && std::is_standard_layout_v<T> && std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
         class hash_view : public std::ranges::view_interface<hash_view<R, T, A, F, S>> {
             R input_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -68,7 +69,7 @@ namespace sph::ranges::views
             size_t target_hash_size_;
         public:
             explicit hash_fn(size_t target_hash_size) noexcept : target_hash_size_{ target_hash_size } {}
-            template <std::ranges::viewable_range R>
+            template <sph::ranges::views::detail::hash_range R>
             [[nodiscard]] constexpr auto operator()(R&& range) const -> hash_view<std::views::all_t<R>, T, A, F, S>
             {
                 return hash_view<std::views::all_t<R>, T, A, F, S>(target_hash_size_, std::views::all(std::forward<R>(range)));

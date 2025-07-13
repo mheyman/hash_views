@@ -22,8 +22,9 @@ namespace sph::ranges::views::detail
      * as many 0 bits as needed to fill the chunk size.
      *
      * @tparam O The output type. Process returns one of these each time it is called.
-     * @tparam S The hash style. Append, append padded, separate, or separate padded.
-     * @tparam H The hash. Sha256, sha512, black2b.
+     * @tparam S The hash site. Append, or separate.
+     * @tparam F The hash format. padded, or raw.
+     * @tparam H The hash. Sha256, sha512, Blake2b.
      */
     template<typename O, sph::hash_site S, sph::hash_format F, basic_hash H>
     class hash_processor  // NOLINT(clang-diagnostic-padded)
@@ -41,8 +42,8 @@ namespace sph::ranges::views::detail
         typename std::array<uint8_t, H::chunk_size>::iterator chunk_current_{ chunk_.begin() };
         struct empty {};
         using value_t = std::conditional_t<single_byte, empty, O>;
-        using value_buf_t = std::conditional_t<single_byte, empty, std::array<uint8_t, sizeof(O)>>;
-        using value_buf_current_t = std::conditional_t<single_byte, empty, typename std::array<uint8_t, sizeof(O)>::iterator>;
+        using value_buf_t = std::conditional_t<single_byte, empty, std::span<uint8_t, sizeof(value_t)>>;
+        using value_buf_current_t = std::conditional_t<single_byte, empty, typename value_buf_t::iterator>;
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunknown-attributes"
@@ -55,16 +56,16 @@ namespace sph::ranges::views::detail
 #endif
         bool input_complete_{ false };
     public:
-        template<bool SINGLE_BYTE = single_byte>
-            requires (SINGLE_BYTE == true)
+        template<bool SingleByte = single_byte>
+            requires (SingleByte == true)
         explicit hash_processor(size_t hash_size)
             : hash_{ hash_size }
             , value_{}
             , value_buf_{}
             , value_buf_current_{} {
         }
-        template<bool SINGLE_BYTE = single_byte>
-            requires (SINGLE_BYTE == false)
+        template<bool SingleByte = single_byte>
+            requires (SingleByte == false)
         explicit hash_processor(size_t hash_size)
             : hash_{ hash_size }
             , value_{}
@@ -162,13 +163,14 @@ namespace sph::ranges::views::detail
 
                 if (std::distance(hash_current_, hash_.hash().end()) < sizeof(O))
                 {
+                    auto hash_size{ static_cast<size_t>(std::ranges::distance(hash_.hash())) };
                     throw std::runtime_error(
                         std::format(
                             "Cannot handle output type size of {} bytes. Not enough hash data to fill the output value. Expected {} bytes, only {}{} hash bytes available.",
                             sizeof(O),
                             hash_.target_hash_size(),
-                            hash_.target_hash_size() < hash_.hash().size() ? std::format(" of {}", hash_.hash().size()) : std::format(""),
-                            hash_.hash().size()));
+                            hash_.target_hash_size() < hash_size ? std::format(" of {}", hash_size) : std::format(""),
+                            hash_size));
                 }
 
                 while (true)
@@ -202,7 +204,7 @@ namespace sph::ranges::views::detail
                 }
             }
 
-            hash_.final({ chunk_.data(), std::distance(chunk_.begin(), chunk_current_) });
+            hash_.final({ chunk_.data(), static_cast<size_t>(std::distance(chunk_.begin(), chunk_current_)) });
             if constexpr (pad_hash)
             {
                 // extend the hash pad to fill up to the next multiple of sizeof(O)
