@@ -169,11 +169,7 @@ TEST_CASE("hash_verify.vectors")
     auto test_name{ get_current_test_name() };
     for (auto const [index, test_vector] : std::views::enumerate(blake2b_test_vectors | std::views::filter([](auto&& x) { return x.key.empty() && x.salt.empty() && x.personal.empty(); })))
     {
-        auto verify_range = test_vector.input | sph::views::hash_verify<sph::hash_algorithm::blake2b>(test_vector.out, test_vector.outlen);
-        std::vector<uint8_t> verify{ verify_range | std::views::transform([](auto&& v) -> uint8_t
-            {
-                return v ? 1 : 0;
-            }) | std::ranges::to<std::vector>()};
+        auto verify {test_vector.input | sph::views::hash_verify<sph::hash_algorithm::blake2b>(test_vector.out, test_vector.outlen) | std::ranges::to<std::vector>()};
         CHECK_MESSAGE(verify.size() == 1, fmt::format("{}: failed blake on test vector {}", test_name, index));
         CHECK_MESSAGE(verify.front() == true, fmt::format("{}: failed blake on test vector {}", test_name, index));
     }

@@ -10,33 +10,79 @@ namespace sph::ranges::views
     namespace detail
     {
         template <typename R>
-        concept single_byte_viewable_range = std::ranges::viewable_range<R> &&
+        concept hash_verify_range = std::ranges::viewable_range<R>
+            && std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
+            && std::is_trivially_copyable_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
+            && !std::is_pointer_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
+            && !std::is_reference_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>;
+
+        template <typename R>
+        concept hash_verify_single_byte_range = hash_verify_range<R> &&
             (sizeof(std::remove_cvref_t<std::ranges::range_value_t<R>>) == 1);
 
         template <typename R>
-        concept multi_byte_viewable_range = std::ranges::viewable_range<R> &&
+        concept hash_verify_multi_byte_range = hash_verify_range<R> &&
             (sizeof(std::remove_cvref_t<std::ranges::range_value_t<R>>) > 1);
 
         /**
+         * Concept for a range or std::nullopt_t.
+         * @tparam H The type of the range.
+         */
+        template <typename H>
+        concept hash_verify_fn_hash_range = hash_verify_range<H> || std::is_same_v<H, std::nullopt_t>;
+
+        /**
+         * Type declaring a padded hash. Used instead of enum to allow for default behavior if unset.
+         */
+        using hash_verify_format_padded = std::integral_constant<sph::hash_format, sph::hash_format::padded>;
+
+        /**
+         * Type declaring a raw hash. Used instead of enum to allow for default behavior if unset.
+         */
+        using hash_verify_format_raw = std::integral_constant<sph::hash_format, sph::hash_format::raw>;
+
+        /**
+         * Convert a hash format enum to the associated type.
+         * @tparam F The hash format enum value.
+         */
+        template <sph::hash_format F>
+        using hash_verify_format_t = 
+            std::conditional_t<F == sph::hash_format::padded, sph::ranges::views::detail::hash_verify_format_padded, sph::ranges::views::detail::hash_verify_format_raw>;
+
+
+        /**
+         * A hash_verify_format_padded, hash_verify_format_raw or std::nullopt_t.
+         * @tparam F the type of the hash format.
+         */
+        template <typename F>
+        concept hash_verify_fn_hash_format = std::is_same_v<F, sph::ranges::views::detail::hash_verify_format_padded> || std::is_same_v<F, sph::ranges::views::detail::hash_verify_format_raw> || std::is_same_v<F, std::nullopt_t>;
+
+        /**
+         * Get the hash_format value from the hash_verify_fn_hash_format type.
+         * @tparam F The type of the hash format.
+         * @tparam R The range holding a hash.
+         */
+        template<hash_verify_fn_hash_format F, std::ranges::viewable_range R>
+        struct hash_verify_format
+        {
+            static constexpr sph::hash_format value = std::conditional_t<std::is_same_v<F, std::nullopt_t>, std::conditional_t<sizeof(std::remove_cvref_t<std::ranges::range_value_t<R>>) == 1, hash_verify_format_raw, hash_verify_format_padded>, F>();
+        };
+        
+        /**
          * Provides view of hash of the input range.
          * @tparam R The type of the range that holds a hashed stream.
-         * @tparam H The type of the range that holds a hash stream.
          * @tparam A The type of the hash to do.
-         * @tparam S The style of the hash, append, append_padded, separate, or separate_padded.
          */
-        template<std::ranges::viewable_range R, std::ranges::viewable_range H, sph::hash_algorithm A, sph::hash_site S, sph::hash_format F>
+        template<hash_verify_range R, sph::hash_algorithm A, sph::hash_format F>
             requires std::ranges::input_range<R> && std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
-                  && std::ranges::input_range<H> && std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
-        class hash_verify_view : public std::ranges::view_interface<hash_verify_view<R, H, A, S, F>> {
+        class hash_verify_view : public std::ranges::view_interface<hash_verify_view<R, A, F>> {
             bool verify_ok_{ false };
 
             using input_type = std::remove_cvref_t<std::ranges::range_value_t<R>>;
-            static constexpr sph::ranges::views::detail::end_of_input iterate_style =
-                S == sph::hash_site::append 
-                    ? sph::ranges::views::detail::end_of_input::skip_appended_hash
-                    : sph::ranges::views::detail::end_of_input::no_appended_hash;
-            using input_iterator = detail::hash_iterator<R, input_type, A, F, S, iterate_style>;
-            using input_sentinel = detail::hash_sentinel<R, input_type, A, F, S, iterate_style>;
+            using input_append_iterator = detail::hash_iterator<R, input_type, A, F, sph::hash_site::append, end_of_input::skip_appended_hash>;
+            using input_append_sentinel = detail::hash_sentinel<R, input_type, A, F, sph::hash_site::append, end_of_input::skip_appended_hash>;
+            using input_separate_iterator = detail::hash_iterator<R, input_type, A, F, sph::hash_site::separate, end_of_input::no_appended_hash>;
+            using input_separate_sentinel = detail::hash_sentinel<R, input_type, A, F, sph::hash_site::separate, end_of_input::no_appended_hash>;
         public:
             using iterator = single_bool_iterator;
             using sentinel = single_bool_sentinel;
@@ -47,12 +93,12 @@ namespace sph::ranges::views
              * Provides a begin() iterator and end() sentinel over the
              * verified view of the given input range.
              *
+             * @tparam H The type of the range that holds the hash to compare against.
              * @param target_hash_size the size (in bytes) of the hash.
              * @param input the range to verify.
              * @param hash the hash to compare against.
              */
-            template<sph::hash_site HS = S>
-                requires (HS == sph::hash_site::separate)
+            template<hash_verify_range H>
             hash_verify_view(size_t target_hash_size, R&& input, H&& hash)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
                 : verify_ok_{verify(target_hash_size, std::forward<R>(input), std::forward<H>(hash))}
             {}
@@ -68,8 +114,6 @@ namespace sph::ranges::views
              * @param target_hash_size the size (in bytes) of the hash.
              * @param input the range to verify.
              */
-            template<sph::hash_site HS = S>
-                requires (HS == sph::hash_site::append)
             hash_verify_view(size_t target_hash_size, R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
                 : verify_ok_ { verify(target_hash_size, std::forward<R>(input)) }
             {}
@@ -91,12 +135,11 @@ namespace sph::ranges::views
             /**
              * Convert hash into a vector of uint8_t.
              */
-            template<typename Hash>
-            static constexpr auto hash_to_byte_vector(Hash&& hash) -> std::vector<uint8_t>
-            requires (sizeof(std::remove_cvref_t<std::ranges::range_value_t<Hash>>) == 1)
+            template<hash_verify_single_byte_range H>
+            static constexpr auto hash_to_byte_vector(H&& hash) -> std::vector<uint8_t>
             {
-                using value_t = std::remove_cvref_t<std::ranges::range_value_t<Hash>>;
-                return std::forward<Hash>(hash)
+                using value_t = std::remove_cvref_t<std::ranges::range_value_t<H>>;
+                return std::forward<H>(hash)
                     | std::views::transform([](value_t v) -> uint8_t
                         {
                             return static_cast<uint8_t>(v);
@@ -104,12 +147,11 @@ namespace sph::ranges::views
                     | std::ranges::to<std::vector>();
             }
 
-            template<typename Hash>
-            static constexpr auto hash_to_byte_vector(Hash&& hash) -> std::vector<uint8_t>
-            requires (sizeof(std::remove_cvref_t<std::ranges::range_value_t<Hash>>) > 1)
+            template<hash_verify_multi_byte_range H>
+            static constexpr auto hash_to_byte_vector(H&& hash) -> std::vector<uint8_t>
             {
-                using value_t = std::remove_cvref_t<std::ranges::range_value_t<Hash>>;
-                return std::forward<Hash>(hash)
+                using value_t = std::remove_cvref_t<std::ranges::range_value_t<H>>;
+                return std::forward<H>(hash)
                     | std::views::transform([](value_t v) -> std::array<uint8_t, sizeof(value_t)>
                         {
                             std::array<uint8_t, sizeof(value_t)> ret{};
@@ -120,18 +162,19 @@ namespace sph::ranges::views
                     | std::ranges::to<std::vector>();
             }
 
+            template<hash_verify_range H>
             static auto verify(size_t target_hash_size, R&& input, H&& hash) -> bool
             {
-                std::vector<uint8_t> provided_hash{ hash_to_byte_vector(std::move(hash)) };
+                std::vector<uint8_t> provided_hash{ hash_to_byte_vector(std::forward<H>(hash)) };
                 R to_hash{ std::move(input) };
                 std::vector<uint8_t> hash_result
                 {
                     hash_to_byte_vector(
-                        std::ranges::subrange(input_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size), input_sentinel{}))
+                        std::ranges::subrange(input_separate_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size), input_separate_sentinel{}))
                 };
                 if (provided_hash.size() != hash_result.size())
                 {
-                    fmt::print("Hash size mismatch: expected {} bytes, calculated {} bytes.\n  expected {},\n       got {}\n", provided_hash.size(), hash_result.size(), fmt::join(provided_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
+                    fmt::print("H size mismatch: expected {} bytes, calculated {} bytes.\n  expected {},\n       got {}\n", provided_hash.size(), hash_result.size(), fmt::join(provided_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
                         fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "));
                     return false;
                 }
@@ -144,7 +187,7 @@ namespace sph::ranges::views
                 {
                     if (!ret)
                     {
-                        fmt::print("Hash mismatch: provided hash does not match computed hash: provided: {}, calculated: {}.\n",
+                        fmt::print("H mismatch: provided hash does not match computed hash: provided: {}, calculated: {}.\n",
                             fmt::join(provided_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
                             fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " ")
                             );
@@ -157,8 +200,8 @@ namespace sph::ranges::views
             static auto verify(size_t target_hash_size, R&& input) -> bool
             {
                 R to_hash{ std::move(input) };
-                auto hasher { input_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size) };
-                std::vector<uint8_t> hash_result{ hash_to_byte_vector(std::ranges::subrange(hasher, input_sentinel{})) };
+                auto hasher { input_append_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size) };
+                std::vector<uint8_t> hash_result{ hash_to_byte_vector(std::ranges::subrange(hasher, input_append_sentinel{})) };
                 std::vector<uint8_t> appended_hash{ hash_to_byte_vector(hasher.hash()) }; // available after iteration complete
                 if (appended_hash.size() != hash_result.size())
                 {
@@ -172,12 +215,6 @@ namespace sph::ranges::views
             }
         };
 
-        template<std::ranges::viewable_range R, sph::hash_algorithm A = sph::hash_algorithm::blake2b, sph::hash_format F = sph::hash_format::raw>
-        hash_verify_view(R&&) -> hash_verify_view<R, R, A, sph::hash_site::append, F>;
-
-        template<std::ranges::viewable_range R, std::ranges::viewable_range H, sph::hash_algorithm A = sph::hash_algorithm::blake2b, sph::hash_format F = sph::hash_format::raw>
-        hash_verify_view(R&&, H&&) -> hash_verify_view<R, H, A, sph::hash_site::separate, F>;
-
         /**
          * Functor that, given a hashed+hash range or hashed range and a 
          * separate hash range, provides a range of a single boolean indicating
@@ -185,10 +222,13 @@ namespace sph::ranges::views
          * @tparam A The hash algorithm.
          * @tparam H The hash data range type to verify against.
          */
-        template <sph::hash_algorithm A, sph::hash_format F = sph::hash_format::raw, sph::hash_site S = sph::hash_site::append, std::ranges::viewable_range H = std::nullopt_t>
-        class hash_verify_fn : public std::ranges::range_adaptor_closure<hash_verify_fn<A, F, S, H>>
+        template <sph::hash_algorithm A, hash_verify_fn_hash_format F, hash_verify_fn_hash_range H>
+        class hash_verify_fn : public std::ranges::range_adaptor_closure<hash_verify_fn<A, F, H>>
         {
-            std::optional<std::remove_reference_t<H>> hash_;
+            static constexpr bool appended_hash{ std::is_same_v<H, std::nullopt_t> };
+            struct empty {};
+            using hash_t = std::conditional_t<appended_hash, empty, H>;
+            hash_t hash_;
             size_t target_hash_size_;
 
         public:
@@ -199,20 +239,20 @@ namespace sph::ranges::views
 
             template <std::ranges::viewable_range R>
             [[nodiscard]] constexpr auto operator()(R&& range) const
-                -> hash_verify_view<std::views::all_t<R>, std::views::all_t<H>, A, S, F>
+                -> hash_verify_view<std::views::all_t<R>, A, hash_verify_format<F, R>::value>
+                requires appended_hash
             {
-                if constexpr (std::is_same_v<H, std::nullopt_t>)
-                {
-                    static_assert(S == sph::hash_site::append, "Require sph::hash_site::append for appended hash.");
-                    return hash_verify_view<std::views::all_t<R>, std::views::all_t<R>, A, sph::hash_site::append, F>(
-                        target_hash_size_, std::views::all(std::forward<R>(range)));
-                }
-                else
-                {
-                    static_assert(S == sph::hash_site::separate, "Require sph::hash_site::separate for non-appended hash.");
-                    return hash_verify_view<std::views::all_t<R>, std::views::all_t<H>, A, S, F>(
-                        target_hash_size_, std::views::all(std::forward<R>(range)), std::views::all(*hash_));
-                }
+                return hash_verify_view<std::views::all_t<R>, A, hash_verify_format<F, R>::value>(
+                    target_hash_size_, std::views::all(std::forward<R>(range)));
+            }
+
+            template <std::ranges::viewable_range R>
+            [[nodiscard]] constexpr auto operator()(R&& range) const
+                -> hash_verify_view<std::views::all_t<R>, A, hash_verify_format<F, R>::value>
+            requires (!appended_hash)
+            {
+                return hash_verify_view<std::views::all_t<R>, A, hash_verify_format<F, R>::value>(
+                    target_hash_size_, std::views::all(std::forward<R>(range)), std::views::all(hash_));
             }
         };
 
@@ -228,24 +268,72 @@ namespace sph::views
      * @param target_hash_size the minimum size in bytes of the hash created.
      * @return A functor that takes a hashed+hash range or separate hashed and hash ranges and returns a view of the verification status.
 	 */
-	template<sph::hash_algorithm A, sph::hash_format F = sph::hash_format::raw>
-    auto hash_verify(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<A, F, sph::hash_site::append>
+	template<sph::hash_algorithm A, sph::hash_format F>
+    auto hash_verify(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<A, ranges::views::detail::hash_verify_format_t<F>, std::nullopt_t>
     {
-        return sph::ranges::views::detail::hash_verify_fn<A, F, sph::hash_site::append>{target_hash_size};
+        return sph::ranges::views::detail::hash_verify_fn<A, ranges::views::detail::hash_verify_format_t<F>, std::nullopt_t>{target_hash_size};
     }
+
+    template<sph::hash_format F, sph::hash_algorithm A>
+    auto hash_verify(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<A, ranges::views::detail::hash_verify_format_t<F>, std::nullopt_t>
+    {
+        return sph::ranges::views::detail::hash_verify_fn<A, ranges::views::detail::hash_verify_format_t<F>, std::nullopt_t>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A>
+    auto hash_verify(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<A, std::nullopt_t, std::nullopt_t>
+    {
+        return sph::ranges::views::detail::hash_verify_fn<A, std::nullopt_t, std::nullopt_t>{target_hash_size};
+    }
+
+    template<sph::hash_format F>
+    auto hash_verify(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<sph::hash_algorithm::blake2b, ranges::views::detail::hash_verify_format_t<F>, std::nullopt_t>
+    {
+        return sph::ranges::views::detail::hash_verify_fn<sph::hash_algorithm::blake2b, ranges::views::detail::hash_verify_format_t<F>, std::nullopt_t>{target_hash_size};
+    }
+
+    inline auto hash_verify(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<sph::hash_algorithm::blake2b, std::nullopt_t, std::nullopt_t>
+    {
+        return sph::ranges::views::detail::hash_verify_fn<sph::hash_algorithm::blake2b, std::nullopt_t, std::nullopt_t>{target_hash_size};
+    }
+
 
     /**
      * A range adaptor that represents view of an underlying single-element sequence of the hash verification.
      *
      * @tparam A The hash algorithm
-     * @param hash The hash verified against.
      * @param target_hash_size the minimum size in bytes of the hash created.
+     * @param hash the range holding the hash to compare against.
      * @return A functor that takes a hashed+hash range or separate hashed and hash ranges and returns a view of the verification status.
      */
-    template<sph::hash_algorithm A, sph::hash_format F = sph::hash_format::raw, std::ranges::viewable_range H>
-    auto hash_verify(H&& hash, size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<A, F, sph::hash_site::separate, H>
+    template<sph::hash_algorithm A, sph::hash_format F, sph::ranges::views::detail::hash_verify_range H>
+    auto hash_verify(H&& hash, size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<A, ranges::views::detail::hash_verify_format_t<F>, H>
     {
-        return sph::ranges::views::detail::hash_verify_fn<A, F, sph::hash_site::separate, H>{std::forward<H>(hash), target_hash_size};
+        return sph::ranges::views::detail::hash_verify_fn<A, ranges::views::detail::hash_verify_format_t<F>, H>{std::forward<H>(hash), target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_algorithm A, sph::ranges::views::detail::hash_verify_range H>
+    auto hash_verify(H&& hash, size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<A, ranges::views::detail::hash_verify_format_t<F>, H>
+    {
+        return sph::ranges::views::detail::hash_verify_fn<A, ranges::views::detail::hash_verify_format_t<F>, H>{std::forward<H>(hash), target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::ranges::views::detail::hash_verify_range H>
+    auto hash_verify(H&& hash, size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<A, std::nullopt_t, H>
+    {
+        return sph::ranges::views::detail::hash_verify_fn<A, std::nullopt_t, H>{std::forward<H>(hash), target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::ranges::views::detail::hash_verify_range H>
+    auto hash_verify(H&& hash, size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<sph::hash_algorithm::blake2b, ranges::views::detail::hash_verify_format_t<F>, H>
+    {
+        return sph::ranges::views::detail::hash_verify_fn<sph::hash_algorithm::blake2b, ranges::views::detail::hash_verify_format_t<F>, H>{std::forward<H>(hash), target_hash_size};
+    }
+
+    template<sph::ranges::views::detail::hash_verify_range H>
+    auto hash_verify(H&& hash, size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_verify_fn<sph::hash_algorithm::blake2b, std::nullopt_t, H>
+    {
+        return sph::ranges::views::detail::hash_verify_fn<sph::hash_algorithm::blake2b, std::nullopt_t, H>{std::forward<H>(hash), target_hash_size};
     }
 
 }
