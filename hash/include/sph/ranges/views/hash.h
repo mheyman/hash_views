@@ -10,86 +10,9 @@ namespace sph::ranges::views
 {
     namespace detail
     {
-
-        template<typename T>
-        [[nodiscard]] constexpr bool is_one_byte_v = sizeof(T) == 1;
-
-        template<typename T>
-        [[nodiscard]] constexpr bool is_hash_enum_v =
-            std::is_same_v<T, sph::hash_algorithm> ||
-            std::is_same_v<T, sph::hash_format> ||
-            std::is_same_v<T, sph::hash_site>;
-        static_assert(is_hash_enum_v<sph::hash_algorithm>);
-        static_assert(is_hash_enum_v<sph::hash_format>);
-        static_assert(is_hash_enum_v<sph::hash_site>);
-
-        template<typename T>
-        constexpr bool is_output_type_v =
-            std::is_standard_layout_v<T> &&
-            std::is_trivially_copyable_v<T> &&
-            !std::is_pointer_v<T> &&
-            !std::is_reference_v<T> &&
-            !is_hash_enum_v<T>;
-
-        template<typename T>
-        using default_hash_format = std::conditional_t<
-            is_one_byte_v<T>,
-            std::integral_constant<sph::hash_format, sph::hash_format::raw>,
-            std::integral_constant<sph::hash_format, sph::hash_format::padded>
-        >;
-
-        // Default output type if walking the types doesn't find an output type.
-        template<typename... Args>
-        struct hash_pick_output_type {
-            using type = uint8_t; // default
-        };
-
-        // Walk the types and pick the first one that is an output type.
-        template<typename First, typename... Rest>
-        struct hash_pick_output_type<First, Rest...> {
-            using type = std::conditional_t<
-                is_output_type_v<First>,
-                First,
-                typename hash_pick_output_type<Rest...>::type
-            >;
-        };
-
-
-        // unset enum value.
-        struct hash_enum_type_not_specified {};
-
-        // Default hash enum type if walking the types doesn't find a desired enum.
-        template<typename Want, typename... Args>
-        struct hash_pick_enum_type { using type = hash_enum_type_not_specified; };
-
-        // Walk the types and pick the first enum that is the type wanted.
-        template<typename Want, typename First, typename... Rest>
-        struct hash_pick_enum_type<Want, First, Rest...> {
-            using type = std::conditional_t<
-                std::is_same_v<Want, First>, First, typename hash_pick_enum_type<Want, Rest...>::type
-            >;
-        };
-
-        // Deduce the types needed for the hash_view from the hash parameters.
-        template<typename... Args>
-        struct hash_view_deduced_param {
-            using output_type = typename hash_pick_output_type<Args...>::type;
-            using algorithm = std::conditional_t<
-                std::is_same_v<typename hash_pick_enum_type<sph::hash_algorithm, Args...>::type, hash_enum_type_not_specified>,
-                std::integral_constant<sph::hash_algorithm, sph::hash_algorithm::blake2b>,
-                typename hash_pick_enum_type<sph::hash_algorithm, Args...>::type
-            >;
-            using site = 
-                std::conditional_t<
-                std::is_same_v<typename hash_pick_enum_type<sph::hash_site, Args...>::type, hash_enum_type_not_specified>,
-                std::integral_constant<sph::hash_site, sph::hash_site::separate>,
-                typename hash_pick_enum_type<sph::hash_site, Args...>::type
-                >;
-            using format = std::conditional_t<
-                std::is_same_v<typename hash_pick_enum_type<sph::hash_format, Args...>::type, hash_enum_type_not_specified>,
-                default_hash_format<typename hash_pick_output_type<Args...>::type>,
-                typename hash_pick_enum_type<sph::hash_format, Args...>::type
-            >;
+        template <typename T>
+        concept is_one_byte = requires {
+            sizeof(T) == 1;
         };
 
         /**
@@ -132,6 +55,9 @@ namespace sph::ranges::views
             auto end() const -> sentinel { return sentinel{}; }
         };
 
+        template<std::ranges::viewable_range R, typename T = uint8_t, sph::hash_algorithm A = sph::hash_algorithm::blake2b, sph::hash_format F, sph::hash_site S = sph::hash_site::separate>
+        hash_view(R&&) -> hash_view<R, T, A, F, S>;
+
         /**
          * Functor that, given a range, provides a hashed view of that range.
          * @tparam T The type to hash into.
@@ -153,36 +79,551 @@ namespace sph::ranges::views
 
 namespace sph::views
 {
+    // All 75 overloads to get any of the parameters in any order with
+    // defaults. Unfortunately, parameter packs don't work here because
+    // of the non-type values in the template parameters.
+
     /**
      * A range adaptor that represents view of an underlying sequence after
      * applying the requested hash function.
      *
-     * @tparam Args The output type, hash algorithm, hash format, and hash
-     *      site. Any order works and there are defaults. The output type must
-     *      be standard layout and defaults to uint8_t. The hash algorithm is
-     *      one of hash_algorithm::sha256, hash_algorithm::sha512, or
-     *      hash_algorithm::blake2b and defaults to blake2b. The hash format is
-     *      either raw or padded and defaults to raw for 1-byte output types
-     *      and padded for multi-byte output types. The hash site is either
-     *      hash_site::append or hash_site::separate and defaults to separate
-     *      where only the hash bytes are output. With append, the input range
-     *      gets passed to the output view with the hash immediately following.
+     * @tparam A The hash algorithm to use. Either hash_algorithm::sha256,
+     *      hash_algorithm::sha512, or hash_algorithm::blake2b.
+     * @tparam T The output type. Must be std::is_standard_layout_v<T>.
+     * @tparam F The hash format to use. Either raw or padded.
+     * @tparam S The hash site to use. Either hash_site::append or
+     *      hash_site::separate. Defaults to separate. With append, the input
+     *      range gets passed to the output view with the hash immediately
+     *      following.
      * @param target_hash_size The size in bytes of the hash to create.
      *      <code>0 <= target_hash_size <= sph::hash_param<A>::hash_byte_count()</code>
      *      or <code>std::invalid_argument</code>; if 0,
      *      <code>...hash_byte_count()</code> is used.
-     * @return a functor that takes a range and returns a hashed view of that
-     *      range. Intended for use in a pipe expression.
+     * @return a functor that takes a range and returns a hashed view of that range.
      */
-    template<typename... Args>
-    auto hash(size_t target_hash_size = 0)
+    template<sph::hash_algorithm A, typename T, sph::hash_format F, sph::hash_site S>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
     {
-        using param = sph::ranges::views::detail::hash_view_deduced_param<Args...>;
-        return sph::ranges::views::detail::hash_fn<
-            typename param::output_type,
-            typename param::algorithm,
-            typename param::format,
-            typename param::site
-        >{target_hash_size};
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
     }
+
+    template<sph::hash_algorithm A, typename T, sph::hash_site S, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_site S, typename T, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_site S, sph::hash_format F, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_format F, typename T, sph::hash_site S>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_algorithm A, typename T, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_algorithm A, sph::hash_format F, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_format F, sph::hash_algorithm A, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_format F, typename T, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, typename T, sph::hash_algorithm A, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, typename T, sph::hash_format F, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_algorithm A, typename T, sph::hash_site S>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_algorithm A, sph::hash_site S, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_site S, sph::hash_algorithm A, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_site S, typename T, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, typename T, sph::hash_algorithm A, sph::hash_site S>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, typename T, sph::hash_site S, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_algorithm A, sph::hash_site S, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_site S, sph::hash_algorithm A, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_site S, sph::hash_format F, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_format F, sph::hash_algorithm A, sph::hash_site S>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_format F, sph::hash_site S, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, S>{target_hash_size};
+    }
+
+    // 3-type overloads
+
+    template<sph::hash_algorithm A, typename T, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, typename T, sph::hash_site S>
+        requires (std::is_standard_layout_v<T> && sph::ranges::views::detail::is_one_byte<T>) 
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, typename T, sph::hash_site S>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_site S, typename T>
+        requires (std::is_standard_layout_v<T> && sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_site S, typename T>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_site S, sph::hash_format F>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_format F, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_format F, sph::hash_site S>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_algorithm A, typename T>
+        requires (std::is_standard_layout_v<T> && sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_algorithm A, typename T>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_algorithm A, sph::hash_format F>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_format F, sph::hash_algorithm A>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_format F, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, typename T, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T> && sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, typename T, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, typename T, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_algorithm A, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_algorithm A, sph::hash_site S>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_site S, sph::hash_algorithm A>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_site S, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, typename T, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<sph::hash_format F, typename T, sph::hash_site S>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_algorithm A, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_algorithm A, sph::hash_site S>
+        requires (std::is_standard_layout_v<T>&& sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_algorithm A, sph::hash_site S>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_site S, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T> && sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_site S, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_site S, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_format F, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_format F, sph::hash_site S>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, S>{target_hash_size};
+    }
+
+    // 2-type overloads
+
+    template<sph::hash_algorithm A, typename T>
+        requires (std::is_standard_layout_v<T> && sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, typename T>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_site S>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<sph::hash_algorithm A, sph::hash_format F>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_algorithm A>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, sph::hash_format F>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, typename T>
+        requires (std::is_standard_layout_v<T>&& sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<sph::hash_site S, typename T>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::padded, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::padded, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_algorithm A>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<sph::hash_format F, sph::hash_site S>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, F, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, F, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F, typename T>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T> && sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::raw, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_algorithm A>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, A, sph::hash_format::padded, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_site S>
+        requires (std::is_standard_layout_v<T> && sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_site S>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::padded, S>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::padded, S>{target_hash_size};
+    }
+
+    template<typename T, sph::hash_format F>
+        requires (std::is_standard_layout_v<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+    // 1-type overloads
+
+    template<sph::hash_algorithm A>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, A, sph::hash_format::raw, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, A, sph::hash_format::raw, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<sph::hash_site S>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, sph::hash_format::raw, S>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, sph::hash_format::raw, S>{target_hash_size};
+    }
+
+    template<sph::hash_format F>
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, F, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, F, sph::hash_site::separate>{target_hash_size};
+    }
+
+
+    template<typename T>
+        requires (std::is_standard_layout_v<T>&& sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::raw, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::raw, sph::hash_site::separate>{target_hash_size};
+    }
+
+    template<typename T>
+        requires (std::is_standard_layout_v<T> && !sph::ranges::views::detail::is_one_byte<T>)
+    auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::padded, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<T, sph::hash_algorithm::blake2b, sph::hash_format::padded, sph::hash_site::separate>{target_hash_size};
+    }
+
+
+    // default: separate raw uint8_t blake2b hash
+
+    inline auto hash(size_t target_hash_size = 0) -> sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, sph::hash_format::raw, sph::hash_site::separate>
+    {
+        return sph::ranges::views::detail::hash_fn<uint8_t, sph::hash_algorithm::blake2b, sph::hash_format::raw, sph::hash_site::separate>{target_hash_size};
+    }
+
 }
