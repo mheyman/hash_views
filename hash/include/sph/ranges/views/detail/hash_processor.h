@@ -111,16 +111,9 @@ namespace sph::ranges::views::detail
                 return hash_current_ == hash_end_ ? 0 : *hash_current_++;
             }
 
-            while (true)
+            if (auto [byte_ok, byte_value] {hash_next_byte(next_byte)}; byte_ok)
             {
-                if (auto [byte_ok, byte_value] {hash_next_byte(next_byte)}; byte_ok)
-                {
-                    return static_cast<O>(byte_value);
-                }
-                else
-                {
-                    break;
-                }
+                return static_cast<O>(byte_value);
             }
 
             hash_.final({ chunk_.data(), static_cast<size_t>(std::distance(chunk_.begin(), chunk_current_)) });
@@ -155,7 +148,6 @@ namespace sph::ranges::views::detail
             input_complete_ = true;
             return static_cast<O>(*hash_current_++);
         }
-
 
         template<typename T, next_byte_function F>
             requires std::is_standard_layout_v<T> && !single_byte
@@ -213,10 +205,10 @@ namespace sph::ranges::views::detail
             hash_.final({ chunk_.data(), std::distance(chunk_.begin(), chunk_current_) });
             if constexpr (pad_hash)
             {
-                size_t remaining{ static_cast<size_t>(std::distance(value_buf_current_, value_buf_.end())) + hash_.target_hash_size()};
-                size_t pad_size{ remaining % sizeof(O) };
+                // extend the hash pad to fill up to the next multiple of sizeof(O)
+                auto current_partial_byte_count{ static_cast<size_t>(std::distance(value_buf_.begin(), value_buf_current_)) };
+                hash_.set_target_hash_size((((current_partial_byte_count + hash_.target_hash_size() + sizeof(O) - 1) / sizeof(O)) * sizeof(O)) - current_partial_byte_count);
             }
-            hash_.set_target_hash_size(hash_.target_hash_size() + std::distance(value_buf_current_, value_buf_.end()) - 1);
             auto hash{ hash_.hash() };
             hash_current_ = hash.begin();
             hash_end_ = hash.end();

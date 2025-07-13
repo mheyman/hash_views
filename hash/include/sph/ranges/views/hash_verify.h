@@ -117,13 +117,27 @@ namespace sph::ranges::views
                 };
                 if (provided_hash.size() != hash_result.size())
                 {
+                    fmt::print("Hash size mismatch: expected {} bytes, calculated {} bytes.\n  expected {},\n       got {}\n", provided_hash.size(), hash_result.size(), fmt::join(provided_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
+                        fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "));
                     return false;
                 }
 
-                return std::ranges::all_of(std::views::zip(provided_hash, hash_result), [](auto&& pair)
+                bool const ret{ std::ranges::all_of(std::views::zip(provided_hash, hash_result), [](auto&& pair)
                     {
                         return std::get<0>(pair) == std::get<1>(pair);
-                    });
+                    })};
+                if constexpr (sizeof(std::remove_cvref_t<std::ranges::range_value_t<H>>) == 1)
+                {
+                    if (!ret)
+                    {
+                        fmt::print("Hash mismatch: provided hash does not match computed hash: provided: {}, calculated: {}.\n",
+                            fmt::join(provided_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
+                            fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " ")
+                            );
+                    }
+                }
+
+                return ret;
             }
 
             static auto verify(size_t target_hash_size, R&& input) -> bool

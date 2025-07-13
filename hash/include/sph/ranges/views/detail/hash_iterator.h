@@ -54,6 +54,7 @@ namespace sph::ranges::views::detail
         using input_type = std::remove_cvref_t<std::ranges::range_value_t<R>>;
         using output_type = std::remove_cvref_t<T>;
     private:
+        static constexpr bool single_byte_input{ sizeof(input_type) == 1 };
         struct empty {};
         struct input_value_with_position { input_type value; size_t position; };
         using input_value_t = std::conditional_t < sizeof(input_type) == 1, empty, input_value_with_position>;
@@ -171,31 +172,36 @@ namespace sph::ranges::views::detail
          * @return True if the provided iterator is the same as this one.
          */
         auto equals(const hash_iterator& i) const noexcept -> bool
+        requires single_byte_input
         {
-            if constexpr (sizeof(input_type) == 1)
-            {
-                return to_hash_current_ == i.to_hash_current_ 
-                    && to_hash_end_ == i.to_hash_end_
-                    && (
-                        (!hash_ && !i.hash_) 
-                        || 
-                        (
-                            hash_ && i.hash_ 
-                            && hash_->input_complete() == i.hash_->input_complete()
-                            && hash_->hash_position() == i.hash_->hash_position()));
-            }
-            else
-            {
-                return to_hash_current_ == i.to_hash_current_ 
-                    && to_hash_end_ == i.to_hash_end_ 
-                    && input_.position == i.input_.position
-                    && (
-                        (!hash_ && !i.hash_) 
-                        || 
-                        (hash_ && i.hash_ 
+            return to_hash_current_ == i.to_hash_current_ 
+                && to_hash_end_ == i.to_hash_end_
+                && (
+                    (!hash_ && !i.hash_) 
+                    || 
+                    (
+                        hash_ && i.hash_ 
                         && hash_->input_complete() == i.hash_->input_complete()
-                            && hash_->hash_position() == i.hash_->hash_position()));
-            }
+                        && hash_->hash_position() == i.hash_->hash_position()));
+        }
+
+        /**
+         * Compare the provided iterator for equality.
+         * @param i The iterator to compare against.
+         * @return True if the provided iterator is the same as this one.
+         */
+        auto equals(const hash_iterator& i) const noexcept -> bool
+        requires (!single_byte_input)
+        {
+            return to_hash_current_ == i.to_hash_current_
+                && to_hash_end_ == i.to_hash_end_
+                && input_.position == i.input_.position
+                && (
+                    (!hash_ && !i.hash_)
+                    ||
+                    (hash_ && i.hash_
+                        && hash_->input_complete() == i.hash_->input_complete()
+                        && hash_->hash_position() == i.hash_->hash_position()));
         }
 
         /**
@@ -213,18 +219,6 @@ namespace sph::ranges::views::detail
         auto operator!=(const hash_sentinel<R, T, A, F, S, E>& s) const noexcept -> bool { return !equals(s); }
 
     private:
-        static auto input_init()
-        {
-            if constexpr (sizeof(input_type) == 1)
-            {
-                return empty{};
-            }
-            else
-            {
-                return input_value_with_position{ {}, sizeof(input_type) };
-            }
-        }
-
         auto verify_can_hash() const -> void
         {
             if (!hash_)
@@ -242,87 +236,103 @@ namespace sph::ranges::views::detail
             }
         }
 
+        static auto input_init()
+        requires single_byte_input
+        {
+            return empty{};
+        }
 
         auto input_complete() -> bool
+            requires single_byte_input
         {
-            if constexpr (sizeof(input_type) == 1)
+            return to_hash_current_ == to_hash_end_;
+        }
+
+
+        auto next_byte_from_input_range() -> std::tuple<bool, uint8_t>
+        requires single_byte_input
+        {
+            if (input_complete())
             {
-                return to_hash_current_ == to_hash_end_;
+                // not sure can get here if it isn't an error - maybe should be a throw
+                return { false, static_cast<uint8_t>(0) };
             }
-            else
-            {
-                return input_.position == sizeof(input_type) && to_hash_current_ == to_hash_end_;
-            }
+
+            return { true, *to_hash_current_++ };
+        }
+
+        static auto input_init()
+        requires (!single_byte_input)
+        {
+            return input_value_with_position{ {}, sizeof(input_type) };
+        }
+
+
+
+        auto input_complete() -> bool
+        requires (!single_byte_input)
+        {
+            return input_.position == sizeof(input_type) && to_hash_current_ == to_hash_end_;
         }
 
         auto next_byte_from_input_range() -> std::tuple<bool, uint8_t>
+        requires (!single_byte_input)
         {
-            if constexpr (sizeof(input_type) == 1)
+            if (input_complete())
             {
-                if (input_complete())
-                {
-                    return { false, static_cast<uint8_t>(0) };
-                }
-
-                return { true, *to_hash_current_++ };
+                // not sure can get here if it isn't an error - maybe should be a throw
+                return { false, static_cast<uint8_t>(0) };
             }
-            else
-            {
-                if (input_complete())
-                {
-                    return { false, static_cast<uint8_t>(0) };
-                }
 
-                if (input_.position == sizeof(input_type))
-                {
-                    input_.position = 0;
-                    input_.value = *to_hash_current_;
-                    ++to_hash_current_;
-                }
+            if (input_.position == sizeof(input_type))
+            {
+                input_.position = 0;
+                input_.value = *to_hash_current_;
+                ++to_hash_current_;
+            }
 
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-container"
 #endif
-                std::tuple<bool, uint8_t> ret{ true, (std::span<uint8_t, sizeof(input_type)>{ reinterpret_cast<uint8_t*>(&input_.value), sizeof(input_type) })[input_.position] };
+            std::tuple<bool, uint8_t> ret{ true, (std::span<uint8_t, sizeof(input_type)>{ reinterpret_cast<uint8_t*>(&input_.value), sizeof(input_type) })[input_.position] };
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
-                ++input_.position;
-                return ret;
+            ++input_.position;
+            return ret;
+        }
+
+        auto next_byte() -> std::tuple<bool, uint8_t>
+        requires (E == end_of_input::skip_appended_hash)
+        {
+            if (rolling_buffer_.done())
+            {
+                return rolling_buffer_.next();
+            }
+
+            while(true)
+            {
+                if (auto [valid_value, value] {next_byte_from_input_range()}; valid_value)
+                {
+                    auto b{ rolling_buffer_.next(value) };
+                    if (b)
+                    {
+                        return { true, *b };
+                    }
+                }
+                else
+                {
+                    rolling_buffer_.done(hash_->target_hash_size());
+                    return rolling_buffer_.next();
+                }
             }
         }
 
         auto next_byte() -> std::tuple<bool, uint8_t>
+        requires (E != end_of_input::skip_appended_hash)
         {
-            if constexpr (E == end_of_input::skip_appended_hash)
-            {
-                if (rolling_buffer_.done())
-                {
-                    return rolling_buffer_.next();
-                }
-
-                while(true)
-                {
-                    if (auto [valid_value, value] {next_byte_from_input_range()}; valid_value)
-                    {
-                        auto b{ rolling_buffer_.next(value) };
-                        if (b)
-                        {
-                            return { true, *b };
-                        }
-                    }
-                    else
-                    {
-                        rolling_buffer_.done(hash_->target_hash_size());
-                        return rolling_buffer_.next();
-                    }
-                }
-            }
-            else
-            {
-                return next_byte_from_input_range();
-            }
+            return next_byte_from_input_range();
         }
     };
 

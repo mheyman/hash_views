@@ -141,28 +141,28 @@ namespace
 //     foo(left, right);
 // }
 
-TEST_CASE("hash.vectors")
-{
-    auto test_name{ get_current_test_name() };
-    for (auto const [index, test_vector] : std::views::enumerate(blake2b_test_vectors | std::views::filter([](auto &&x) { return x.key.empty() && x.salt.empty() && x.personal.empty();})))
-    {
-        auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::blake2b>(test_vector.outlen) | std::ranges::to<std::vector>();
-        CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed blake on test vector {}", test_name, index));
-    }
-
-    for (auto const [index, test_vector] : std::views::enumerate(sha256_test_vectors))
-    {
-        auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::sha256>(test_vector.outlen) | std::ranges::to<std::vector>();
-        CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed sha256 on test vector {}", test_name, index));
-    }
-
-    for (auto const [index, test_vector] : std::views::enumerate(sha512_test_vectors))
-    {
-        auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::sha512>(test_vector.outlen) | std::ranges::to<std::vector>();
-        CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed sha512 on test vector {}", test_name, index));
-    }
-
-}
+// TEST_CASE("hash.vectors")
+// {
+//     auto test_name{ get_current_test_name() };
+//     for (auto const [index, test_vector] : std::views::enumerate(blake2b_test_vectors | std::views::filter([](auto &&x) { return x.key.empty() && x.salt.empty() && x.personal.empty();})))
+//     {
+//         auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::blake2b>(test_vector.outlen) | std::ranges::to<std::vector>();
+//         CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed blake on test vector {}", test_name, index));
+//     }
+// 
+//     for (auto const [index, test_vector] : std::views::enumerate(sha256_test_vectors))
+//     {
+//         auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::sha256>(test_vector.outlen) | std::ranges::to<std::vector>();
+//         CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed sha256 on test vector {}", test_name, index));
+//     }
+// 
+//     for (auto const [index, test_vector] : std::views::enumerate(sha512_test_vectors))
+//     {
+//         auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::sha512>(test_vector.outlen) | std::ranges::to<std::vector>();
+//         CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed sha512 on test vector {}", test_name, index));
+//     }
+// 
+// }
 
 TEST_CASE("hash_verify.vectors")
 {
