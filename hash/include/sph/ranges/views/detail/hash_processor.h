@@ -36,6 +36,7 @@ namespace sph::ranges::views::detail
         using hash_begin_t = decltype(std::declval<hash_t>().hash().begin());
         using hash_end_t = decltype(std::declval<hash_t>().hash().begin());
         hash_t hash_;
+        hash_begin_t hash_begin_{};
         hash_begin_t hash_current_{};
         hash_end_t hash_end_{};
         std::array<uint8_t, H::chunk_size> chunk_{};
@@ -92,12 +93,12 @@ namespace sph::ranges::views::detail
 
         auto hash_size() const -> size_t
         {
-            return static_cast<size_t>(std::distance<decltype(hash_.hash().begin())>(hash_.hash().begin(), hash_current_));
+            return static_cast<size_t>(std::distance<decltype(hash_begin_)>(hash_begin_, hash_current_));
         }
 
         auto hash() const
         {
-            return std::ranges::subrange(hash_.hash().begin(), hash_current_);
+            return std::ranges::subrange(hash_begin_, hash_current_);
         }
 
         auto complete() const -> bool
@@ -112,7 +113,7 @@ namespace sph::ranges::views::detail
 
         auto hash_position() const -> size_t
         {
-            return std::distance<decltype(hash_.hash().begin())>(hash_.hash().begin(), hash_current_);
+            return std::distance<decltype(hash_begin_)>(hash_begin_, hash_current_);
         }
 
         template<typename T, next_byte_function F>
@@ -131,7 +132,7 @@ namespace sph::ranges::views::detail
 
             hash_.final({ chunk_.data(), static_cast<size_t>(std::distance(chunk_.begin(), chunk_current_)) });
             auto hash{ hash_.hash() };
-            hash_current_ = hash.begin();
+            hash_begin_ = hash_current_ = hash.begin();
             hash_end_ = hash.end();
             input_complete_ = true;
             return static_cast<O>(*hash_current_++);
@@ -156,7 +157,7 @@ namespace sph::ranges::views::detail
 
             hash_.final({ chunk_.data(), static_cast<size_t>(std::distance(chunk_.begin(), chunk_current_)) });
             auto hash{ hash_.hash() };
-            hash_current_ = hash.begin();
+            hash_begin_ = hash_current_ = hash.begin();
             hash_end_ = hash.end();
             input_complete_ = true;
             return static_cast<O>(*hash_current_++);
@@ -173,15 +174,14 @@ namespace sph::ranges::views::detail
                     return O{};
                 }
 
-                fmt::print("hash_processor::process: input complete. hash remaining: {}\n", std::distance(hash_current_, hash_.hash().end()));
-                if (static_cast<size_t>(std::distance(hash_current_, hash_.hash().end())) < sizeof(O))
+                if (static_cast<size_t>(std::distance(hash_current_, hash_end_)) < sizeof(O))
                 {
-                    auto hash_size{ static_cast<size_t>(std::ranges::distance(hash_.hash())) };
+                    auto hash_size{ static_cast<size_t>(std::distance(hash_begin_, hash_end_)) };
                     throw std::runtime_error(
                         std::format(
                             "Cannot handle output type size of {} bytes. {} hash bytes remaining. Not enough hash data to fill the output value. Expected {} bytes, only {}{} hash bytes available.",
                             sizeof(O),
-                            std::distance(hash_current_, hash_.hash().end()),
+                            std::distance(hash_current_, hash_end_),
                             hash_.target_hash_size(),
                             hash_.target_hash_size() < hash_size ? std::format(" of {}", hash_size) : std::format(""),
                             hash_size));
@@ -226,7 +226,7 @@ namespace sph::ranges::views::detail
                 hash_.set_target_hash_size((((current_partial_byte_count + hash_.target_hash_size() + sizeof(O) - 1) / sizeof(O)) * sizeof(O)) - current_partial_byte_count);
             }
             auto hash{ hash_.hash() };
-            hash_current_ = hash.begin();
+            hash_begin_ = hash_current_ = hash.begin();
             hash_end_ = hash.end();
             input_complete_ = true;
 

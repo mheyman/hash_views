@@ -50,21 +50,24 @@ namespace sph::ranges::views::detail::concat
 
         auto operator*() const -> reference
         {
-            fmt::print("first_second_iterator: {} of {}\n", remaining(), total_);
             return which_ == 0 ? *first_ : *second_;
         }
 
         auto operator++() -> first_second_iterator&
         {
-            if (which_ == 0) {
+            if (which_ == 0)
+            {
                 ++first_;
-                if (first_ == first_end_) {
+                if (first_ == first_end_)
+                {
                     which_ = 1;
                 }
             }
-            if (which_ == 1) {
+            else if (which_ == 1)
+            {
                 ++second_;
-                if (second_ == second_end_) {
+                if (second_ == second_end_)
+                {
                     which_ = 2;
                 }
             }
@@ -117,7 +120,8 @@ namespace sph::ranges::views::detail::concat
         using const_reference = reference;
 
         first_second_range(R1 first, R2 second)
-            : first_(std::move(first)), second_(std::move(second)) {
+            : first_(std::move(first)), second_(std::move(second))
+        {
         }
 
         auto begin() const -> iterator
