@@ -12,18 +12,17 @@ namespace sph::ranges::views
     namespace detail
     {
         template <typename T>
-        concept is_one_byte = requires {
-            sizeof(T) == 1;
-        };
+        concept is_one_byte = sizeof(T) == 1;
 
         /**
          * @brief A view that encodes binary data into hashed data.
          * @tparam R The type of the range that holds a hashed stream.
          * @tparam T The output type.
          * @tparam A The hash algorithm to use.
+         * @tparam F The hash format to use (padded or raw).
          * @tparam S The hash style to use (append to hashed data or separate from hashed data).
          */
-        template<sph::ranges::views::detail::hash_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S>
+        template<hash_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S>
             requires std::ranges::input_range<R> && sph::ranges::views::detail::hashable_type<T> && std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
         class hash_view : public std::ranges::view_interface<hash_view<R, T, A, F, S>> {
             R input_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -77,6 +76,19 @@ namespace sph::ranges::views
         };
     }
 }
+
+
+/**
+ * hash_view's return a hash_iterator which doesn't have a reference to the
+ * hash_view if the hash is not appended to the output.
+ * @tparam R The type of the range that holds a hashed stream.
+ * @tparam T The output type.
+ * @tparam A The hash algorithm to use.
+ * @tparam F The hash format to use (padded or raw).
+ * @tparam S The hash style to use (append to hashed data or separate from hashed data).
+ */
+template <sph::ranges::views::detail::hash_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S>
+inline constexpr bool std::ranges::enable_borrowed_range<sph::ranges::views::detail::hash_view<R, T, A, F, S>> = S == sph::hash_site::separate;
 
 namespace sph::views
 {

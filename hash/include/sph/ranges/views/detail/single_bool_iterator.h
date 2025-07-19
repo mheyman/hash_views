@@ -17,8 +17,8 @@ namespace sph::ranges::views::detail
         using iterator_category = std::input_iterator_tag;
         using difference_type = std::ptrdiff_t;
         using value_type = bool;
-        using pointer = const value_type*;
-        using reference = const value_type&;
+        using pointer = value_type*;
+        using reference = value_type&;
         using input_type = bool;
         using output_type = bool;
         single_bool_iterator() noexcept : value_{ false }, done_{ true } {}

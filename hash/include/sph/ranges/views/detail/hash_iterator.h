@@ -26,8 +26,7 @@ namespace sph::ranges::views::detail
      * Forward declaration of the iterator end-of-sequence
      * sentinel.
      */
-    template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
-        requires std::ranges::input_range<R>&& std::is_standard_layout_v<T>&& std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
+    template<hash_range R, hashable_type T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
     struct hash_sentinel;
 
     /**
@@ -40,9 +39,7 @@ namespace sph::ranges::views::detail
      * @tparam S The hash style to use (append to hashed data or separate from hashed data). If sizeof(T) == 1, padded hashes are not acceptable.
      * @tparam E The iterate style to use (skip appended hash or no appended hash).
      */
-    template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
-        requires std::ranges::input_range<R> && std::is_standard_layout_v<T>
-        && std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
+    template<hash_range R, hashable_type T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
     class hash_iterator  // NOLINT(clang-diagnostic-padded)
     {
     public:
@@ -348,8 +345,7 @@ namespace sph::ranges::views::detail
         }
     };
 
-    template<std::ranges::viewable_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
-        requires std::ranges::input_range<R>&& std::is_standard_layout_v<T>&& std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
+    template<hash_range R, hashable_type T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
     struct hash_sentinel
     {
         auto operator==(const hash_sentinel& /*other*/) const noexcept -> bool { return true; }
