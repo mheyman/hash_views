@@ -116,9 +116,9 @@ namespace sph::ranges::views::detail
             return std::distance<decltype(hash_begin_)>(hash_begin_, hash_current_);
         }
 
-        template<typename T, next_byte_function F>
+        template<typename T, next_byte_function N>
             requires std::is_standard_layout_v<T>&& single_byte && return_inputs
-        auto process(F next_byte) -> T
+        auto process(N next_byte) -> T
         {
             if (input_complete_)
             {
@@ -138,9 +138,9 @@ namespace sph::ranges::views::detail
             return static_cast<O>(*hash_current_++);
         }
 
-        template<typename T, next_byte_function F>
-            requires std::is_standard_layout_v<T>&& single_byte && !return_inputs
-        auto process(F next_byte) -> T
+        template<typename T, next_byte_function N>
+            requires (std::is_standard_layout_v<T> && single_byte && !return_inputs)
+        auto process(N next_byte) -> T
         {
             if (input_complete_)
             {
@@ -163,9 +163,9 @@ namespace sph::ranges::views::detail
             return static_cast<O>(*hash_current_++);
         }
 
-        template<typename T, next_byte_function F>
-            requires std::is_standard_layout_v<T> && !single_byte
-        auto process(F next_byte) -> T
+        template<typename T, next_byte_function N>
+            requires (std::is_standard_layout_v<T> && !single_byte)
+        auto process(N next_byte) -> T
         {
             if (input_complete_)
             {
@@ -241,8 +241,8 @@ namespace sph::ranges::views::detail
             }
         }
         private:
-            template<next_byte_function F>
-            auto hash_next_byte(F next_byte) -> std::tuple<bool, uint8_t>
+            template<next_byte_function N>
+            auto hash_next_byte(N next_byte) -> std::tuple<bool, uint8_t>
             {
                 auto [byte_ok, byte_value] {next_byte()};
                 if (byte_ok)

@@ -19,21 +19,13 @@ namespace sph::ranges::views::detail::concat
     std::same_as<std::ranges::range_value_t<R2>, uint8_t>
         class first_second_iterator
     {
-        using iterator_1 = std::ranges::iterator_t<R1>;
-        using iterator_2 = std::ranges::iterator_t<R2>;
+        using const_iterator_1 = std::ranges::const_iterator_t<R1>;
+        using const_iterator_2 = std::ranges::const_iterator_t<R2>;
 
-        iterator_1 first_;
-        iterator_1 first_end_;
-        iterator_2 second_;
-        iterator_2 second_end_;
-        // 0 = in first, 1 = in second, 2 = end
-        int which_;
-        size_t total_;
-        auto remaining() const -> size_t
-        {
-            return (which_ == 0 ? std::distance(first_, first_end_) : 0) + std::distance(second_, second_end_);
-        }
-
+        const_iterator_1 first_;
+        const_iterator_1 first_end_;
+        const_iterator_2 second_;
+        const_iterator_2 second_end_;
     public:
         using iterator_concept = std::forward_iterator_tag;
         using iterator_category = std::forward_iterator_tag;
@@ -43,34 +35,27 @@ namespace sph::ranges::views::detail::concat
         using reference = const uint8_t&;
 
         first_second_iterator() = default;
-        first_second_iterator(iterator_1 first, iterator_1 first_end, iterator_2 second, iterator_2 second_end, int which)
-            : first_(first), first_end_(first_end), second_(second), second_end_(second_end), which_(which), total_{remaining()}
+        first_second_iterator(const_iterator_1 first, const_iterator_1 first_end, const_iterator_2 second, const_iterator_2 second_end)
+            : first_(first), first_end_(first_end), second_(second), second_end_(second_end)
         {
         }
 
         auto operator*() const -> reference
         {
-            return which_ == 0 ? *first_ : *second_;
+            return first_ != first_end_ ? *first_ : *second_;
         }
 
         auto operator++() -> first_second_iterator&
         {
-            if (which_ == 0)
+            if (first_ != first_end_)
             {
                 ++first_;
-                if (first_ == first_end_)
-                {
-                    which_ = 1;
-                }
             }
-            else if (which_ == 1)
+            else if (second_ != second_end_)
             {
                 ++second_;
-                if (second_ == second_end_)
-                {
-                    which_ = 2;
-                }
             }
+
             return *this;
         }
 
@@ -83,14 +68,22 @@ namespace sph::ranges::views::detail::concat
 
         auto operator==(const first_second_iterator& other) const -> bool
         {
-            return which_ == other.which_ &&
-                ((which_ == 0 && first_ == other.first_) ||
-                    (which_ == 1 && second_ == other.second_) ||
-                    (which_ == 2));
+            auto my_state{ state() };
+            return my_state == other.state() &&
+                ((my_state == 0 && first_ == other.first_) ||
+                    (my_state == 1 && second_ == other.second_) ||
+                    (my_state == 2));
         }
         auto operator!=(const first_second_iterator& other) const -> bool
         {
             return !(*this == other);
+        }
+
+        private:
+        auto state() const -> size_t
+        {
+            // 0 = in first, 1 = in second, 2 = end
+            return first_ != first_end_ ? 0 : second_ != second_end_ ? 1 : 2;
         }
     };
 
@@ -127,36 +120,31 @@ namespace sph::ranges::views::detail::concat
         auto begin() const -> iterator
         {
             return first_second_iterator<R1, R2>(
-                std::ranges::begin(first_), std::ranges::end(first_),
-                std::ranges::begin(second_), std::ranges::end(second_),
-                first_.empty() ? (second_.empty() ? 2 : 1) : 0
-            );
+                std::ranges::cbegin(first_), std::ranges::cend(first_),
+                std::ranges::cbegin(second_), std::ranges::cend(second_));
         }
 
         auto begin() -> iterator
         {
             return first_second_iterator<R1, R2>(
-                std::ranges::begin(first_), std::ranges::end(first_),
-                std::ranges::begin(second_), std::ranges::end(second_),
-                first_.empty() ? (second_.empty() ? 2 : 1) : 0
+                std::ranges::cbegin(first_), std::ranges::cend(first_),
+                std::ranges::cbegin(second_), std::ranges::cend(second_)
             );
         }
 
         auto end() const -> iterator
         {
             return first_second_iterator<R1, R2>(
-                std::ranges::end(first_), std::ranges::end(first_),
-                std::ranges::end(second_), std::ranges::end(second_),
-                2
+                std::ranges::cend(first_), std::ranges::cend(first_),
+                std::ranges::cend(second_), std::ranges::cend(second_)
             );
         }
 
         auto end() -> iterator
         {
             return first_second_iterator<R1, R2>(
-                std::ranges::end(first_), std::ranges::end(first_),
-                std::ranges::end(second_), std::ranges::end(second_),
-                2
+                std::ranges::cend(first_), std::ranges::cend(first_),
+                std::ranges::cend(second_), std::ranges::cend(second_)
             );
         }
 

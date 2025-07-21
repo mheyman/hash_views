@@ -50,7 +50,15 @@ namespace sph::ranges::views
             auto operator=(hash_view const&) -> hash_view& = default;
             auto operator=(hash_view&&) noexcept -> hash_view& = default;
 
-            auto begin() const -> iterator { return iterator(std::ranges::begin(input_), std::ranges::end(input_), target_hash_size_); }
+            auto begin() const -> iterator
+            {
+                return iterator(
+                    std::ranges::begin(input_),
+                    std::ranges::end(input_),
+                    target_hash_size_
+                );
+            }
+
             // ReSharper disable once CppMemberFunctionMayBeStatic
             auto end() const -> sentinel { return sentinel{}; }
         };

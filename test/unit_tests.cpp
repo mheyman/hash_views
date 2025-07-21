@@ -559,7 +559,146 @@ namespace
             CHECK_EQ(*std::ranges::begin(hello_world | sph::views::hash_verify<hash_format>(ref)), true);
             CHECK_EQ(*std::ranges::begin(hello_world | sph::views::hash_verify(ref)), true);
         }
+    }
 
+    template <sph::hash_algorithm A, sph::hash_format F, sph::ranges::views::detail::hashable_type T>
+    auto hash_roundtrip_separate() -> void
+    {
+        // if F is raw, only works with T of size 1, 2, 3, 4, 6, 8, 12, 24
+        constexpr auto separate{ sph::hash_site::separate };
+        using sph::views::hash;
+        using sph::views::hash_verify;
+        std::array<unsigned char, 8> to_hash{ {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 }};
+        auto ref{ to_hash  | hash<A, F, T, separate>(24) };
+        CHECK_EQ(*std::ranges::begin(to_hash | hash_verify(ref)), true);
+    }
+
+    template <sph::hash_algorithm A, sph::hash_format F>
+    auto hash_roundtrip_separate_types() -> void
+    {
+        SUBCASE("separate.1")
+        {
+            hash_roundtrip_separate<A, F, uint8_t>();
+        }
+        SUBCASE("separate.2")
+        {
+            hash_roundtrip_separate<A, F, uint16_t>();
+        }
+        SUBCASE("separate.3")
+        {
+            hash_roundtrip_separate<A, F, std::array<uint8_t, 3>>();
+        }
+        SUBCASE("separate.4")
+        {
+            hash_roundtrip_separate<A, F, uint32_t>();
+        }
+        SUBCASE("separate.6")
+        {
+            hash_roundtrip_separate<A, F, std::array<uint8_t, 6>>();
+        }
+        SUBCASE("separate.8")
+        {
+            hash_roundtrip_separate<A, F, uint64_t>();
+        }
+        SUBCASE("separate.12")
+        {
+            hash_roundtrip_separate<A, F, std::array<uint8_t, 12>>();
+        }
+        SUBCASE("separate.24")
+        {
+            hash_roundtrip_separate<A, F, std::array<uint8_t, 24>>();
+        }
+    }
+
+    template <sph::hash_algorithm A>
+    auto hash_roundtrip_separate_types_format() -> void
+    {
+        SUBCASE("raw")
+        {
+            hash_roundtrip_separate_types<A, sph::hash_format::raw>();
+        }
+        SUBCASE("padded")
+        {
+            hash_roundtrip_separate_types<A, sph::hash_format::padded>();
+        }
+    }
+
+    template <sph::hash_algorithm A, sph::hash_format F, sph::ranges::views::detail::hashable_type T>
+    auto hash_roundtrip_append() -> void
+    {
+        // if F is raw, only works with T of size 1, 2, 3, 4, 6, 8, 12, 16, 24, 48
+        constexpr auto append{ sph::hash_site::append };
+        using sph::views::hash;
+        using sph::views::hash_verify;
+        auto hashed_range
+        { std::array<unsigned char, 24>
+            {
+                {
+                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+                    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+                }
+            }
+            | hash<A, F, T, append>(24) };
+        auto verified_range{ hashed_range | hash_verify(24) };
+        CHECK_EQ(*std::ranges::begin(verified_range), true);
+    }
+
+    template <sph::hash_algorithm A, sph::hash_format F>
+    auto hash_roundtrip_append_types() -> void
+    {
+        SUBCASE("append.1")
+        {
+            hash_roundtrip_append<A, F, uint8_t>();
+        }
+        SUBCASE("append.2")
+        {
+            hash_roundtrip_append<A, F, uint16_t>();
+        }
+        SUBCASE("append.3")
+        {
+            hash_roundtrip_append<A, F, std::array<uint8_t, 3>>();
+        }
+        SUBCASE("append.4")
+        {
+            hash_roundtrip_append<A, F, uint32_t>();
+        }
+        SUBCASE("append.6")
+        {
+            hash_roundtrip_append<A, F, std::array<uint8_t, 6>>();
+        }
+        SUBCASE("append.8")
+        {
+            hash_roundtrip_append<A, F, uint64_t>();
+        }
+        SUBCASE("append.12")
+        {
+            hash_roundtrip_append<A, F, std::array<uint8_t, 12>>();
+        }
+        SUBCASE("append.16")
+        {
+            hash_roundtrip_append<A, F, std::array<uint8_t, 16>>();
+        }
+        SUBCASE("append.24")
+        {
+            hash_roundtrip_append<A, F, std::array<uint8_t, 24>>();
+        }
+        SUBCASE("append.48")
+        {
+            hash_roundtrip_append<A, F, std::array<uint8_t, 48>>();
+        }
+    }
+    template <sph::hash_algorithm A>
+    auto hash_roundtrip_append_types_format() -> void
+    {
+        SUBCASE("raw")
+        {
+            hash_roundtrip_append_types<A, sph::hash_format::raw>();
+        }
+        SUBCASE("padded")
+        {
+            hash_roundtrip_append_types<A, sph::hash_format::padded>();
+        }
     }
 }
 
@@ -689,6 +828,34 @@ TEST_CASE("hash_verify.overloads.separate")
     SUBCASE("sha512.size_t")
     {
         hash_verify_overloads_separate<sph::hash_algorithm::sha512, size_t>();
+    }
+}
+
+TEST_CASE("roundtrip")
+{
+    SUBCASE("blake2b.separate")
+    {
+        hash_roundtrip_separate_types_format<sph::hash_algorithm::blake2b>();
+    }
+    SUBCASE("sha256.separate")
+    {
+        hash_roundtrip_separate_types_format<sph::hash_algorithm::sha256>();
+    }
+    SUBCASE("sha512.separate")
+    {
+        hash_roundtrip_separate_types_format<sph::hash_algorithm::sha512>();
+    }
+    SUBCASE("blake2b.append")
+    {
+        hash_roundtrip_append_types_format<sph::hash_algorithm::blake2b>();
+    }
+    SUBCASE("sha256.append")
+    {
+        hash_roundtrip_append_types_format<sph::hash_algorithm::sha256>();
+    }
+    SUBCASE("sha512.append")
+    {
+        hash_roundtrip_append_types_format<sph::hash_algorithm::sha512>();
     }
 }
 

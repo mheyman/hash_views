@@ -5,7 +5,7 @@ namespace sph::ranges::views::detail
     template<typename T, sph::hash_algorithm A>
     class rolling_buffer
     {
-        std::array<uint8_t, sph::hash_param<A>::hash_size> buf_;
+        std::array<uint8_t, sph::hash_param<A>::hash_byte_count()> buf_;
         size_t end_{ 0 };
         size_t data_current_{ 0 };
         size_t data_end_{ std::numeric_limits<size_t>::max() };
@@ -27,7 +27,7 @@ namespace sph::ranges::views::detail
 
             if (data_current_ == data_end_)
             {
-                return { false, 0 };
+                return { false, static_cast<uint8_t>(0) };
             }
 
             auto i{ data_current_ % buf_.size() };

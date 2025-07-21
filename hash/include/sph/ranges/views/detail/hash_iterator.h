@@ -21,6 +21,22 @@ namespace sph::ranges::views::detail
         skip_appended_hash = 1
     };
 
+    struct hash_iterator_empty {};
+
+    // Primary template: fallback
+    template <hashable_type T, sph::hash_algorithm A, bool UseRolling>
+    struct select_rolling_buffer_type;
+
+    template <hashable_type T, sph::hash_algorithm A>
+    struct select_rolling_buffer_type<T, A, true> {
+        using type = rolling_buffer<T, A>;
+    };
+
+    template <hashable_type T, sph::hash_algorithm A>
+    struct select_rolling_buffer_type<T, A, false> {
+        using type = hash_iterator_empty;
+    };
+
 
     /**
      * Forward declaration of the iterator end-of-sequence
@@ -53,13 +69,12 @@ namespace sph::ranges::views::detail
         using output_type = std::remove_cvref_t<T>;
     private:
         static constexpr bool single_byte_input{ sizeof(input_type) == 1 };
-        struct empty {};
         struct input_value_with_position { input_type value; size_t position; };
-        using input_value_t = std::conditional_t < sizeof(input_type) == 1, empty, input_value_with_position>;
+        using input_value_t = std::conditional_t < sizeof(input_type) == 1, hash_iterator_empty, input_value_with_position>;
         using hash_processor_t = hash_processor<T, S, F, std::conditional_t<A == sph::hash_algorithm::blake2b, detail::blake2b, 
             std::conditional_t<A == sph::hash_algorithm::sha512, detail::sha512,
             std::conditional_t<A == sph::hash_algorithm::sha256, detail::sha256, void>>>>;
-        using rolling_buffer_t = std::conditional<E == end_of_input::no_appended_hash, empty, std::conditional<E == end_of_input::skip_appended_hash, rolling_buffer<T, A>, void>>;
+        using rolling_buffer_t = typename select_rolling_buffer_type<T, A, E == end_of_input::skip_appended_hash>::type;
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunknown-attributes"
@@ -124,13 +139,19 @@ namespace sph::ranges::views::detail
             return hash_->hash_size();
         }
 
+        auto hash() const -> std::ranges::subrange<decltype(hash_->hash().begin()), decltype(hash_->hash().end())>
+        {
+            verify_can_hash();
+            return hash_->hash();
+        }
+
         /**
          * Increment the iterator.
          * @return The pre-incremented iterator value.
          */
-        auto operator++(int) -> hash_iterator&
+        auto operator++(int) -> hash_iterator
         {
-            auto ret{ *this };
+            hash_iterator ret{ *this };
             if (!hash_read_complete_)
             {
                 verify_can_hash();
@@ -248,7 +269,7 @@ namespace sph::ranges::views::detail
         static auto input_init()
         requires single_byte_input
         {
-            return empty{};
+            return hash_iterator_empty{};
         }
 
         auto input_complete() -> bool

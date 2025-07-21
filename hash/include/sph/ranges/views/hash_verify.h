@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <ranges>
 #include <sph/hash_algorithm.h>
 #include <sph/hash_site.h>
@@ -193,7 +194,10 @@ namespace sph::ranges::views::detail
             else
             {
                 // requires that maybe_padded_hash is actually padded - that is, it contains a 0x80 byte followed by zero or more 0x00 bytes.
-                return std::ranges::distance(&*maybe_padded_hash.begin(), &*std::ranges::find(maybe_padded_hash | std::views::reverse, 0x80));
+                return static_cast<size_t>(
+                    std::ranges::distance(
+                        &*maybe_padded_hash.begin(),
+                        &*std::ranges::find(maybe_padded_hash | std::views::reverse, 0x80)));
             }
         }
 
@@ -220,9 +224,9 @@ namespace sph::ranges::views::detail
             auto ret {std::forward<H>(hash)
                 | std::views::transform([](value_t v) -> std::array<uint8_t, sizeof(value_t)>
                 {
-                    std::array<uint8_t, sizeof(value_t)> ret{};
-                    std::copy_n(reinterpret_cast<uint8_t*>(&v), sizeof(value_t), ret.data());
-                    return ret;
+                    std::array<uint8_t, sizeof(value_t)> tmp{};
+                    std::copy_n(reinterpret_cast<uint8_t*>(&v), sizeof(value_t), tmp.data());
+                    return tmp;
                 })
                 | std::views::join
                 | std::ranges::to<std::vector>()};
@@ -283,8 +287,8 @@ namespace sph::ranges::views::detail
         {
             R to_hash{ std::move(input) };
             auto hasher { input_append_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size) };
-            std::vector<uint8_t> hash_result{ hash_to_byte_vector(std::ranges::subrange(hasher, input_append_sentinel{})) };
-            std::vector<uint8_t> appended_hash{ hash_to_byte_vector(hasher.hash()) }; // available after iteration complete
+            auto  [hash_result, hash_result_size]{ hash_to_byte_vector(std::ranges::subrange(hasher, input_append_sentinel{})) };
+            auto [appended_hash, appended_hash_size] { hash_to_byte_vector(hasher.hash()) }; // available after iteration complete
             if (appended_hash.size() != hash_result.size())
             {
                 return false;
@@ -317,7 +321,7 @@ namespace sph::ranges::views::detail
         explicit hash_verify_fn(size_t target_hash_size = 0) : target_hash_size_{target_hash_size} {}
 
         explicit hash_verify_fn(H&& hash)
-            : hash_{std::move(hash)} {}
+            : hash_{std::forward<H>(hash)} {}
 
         template <hash_range R>
         [[nodiscard]] constexpr auto operator()(R&& range) const
