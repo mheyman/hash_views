@@ -194,11 +194,16 @@ namespace sph::ranges::views::detail
             }
             else
             {
-                // requires that maybe_padded_hash is actually padded - that is, it contains a 0x80 byte followed by zero or more 0x00 bytes.
+                // Requires that maybe_padded_hash is actually padded to work -
+                // that is, it contains a 0x80 byte followed by zero or more
+                // 0x00 bytes.
+                // 
+                // What this really does is find the distance to the last 0x80
+                // byte from the beginning of the vector.
                 return static_cast<size_t>(
-                    std::ranges::distance(
-                        &*maybe_padded_hash.begin(),
-                        &*std::ranges::find(maybe_padded_hash | std::views::reverse, 0x80)));
+                    std::max(
+                        static_cast<ptrdiff_t>(0), 
+                        (std::distance(std::ranges::find(std::ranges::reverse_view(maybe_padded_hash), 0x80), maybe_padded_hash.rend()) - 1)));
             }
         }
 
@@ -318,6 +323,8 @@ namespace sph::ranges::views::detail
         static constexpr bool appended_hash{ std::is_same_v<H, std::nullopt_t> };
         using hash_t = std::conditional_t<appended_hash, hash_verify_empty, H>;
         using target_hash_size_t = std::conditional_t<appended_hash, size_t, hash_verify_empty>;
+        static constexpr hash_format hf{ hash_verify_format<F, hash_t>::value };
+        static constexpr hash_algorithm ha{ A };
         hash_t hash_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
         target_hash_size_t  target_hash_size_;
 
@@ -329,19 +336,19 @@ namespace sph::ranges::views::detail
 
         template <hash_range R>
         [[nodiscard]] constexpr auto operator()(R&& range) const
-            -> hash_verify_view< std::views::all_t<R>, hash_verify_output<R, hash_t>, A, hash_verify_format<F, R>::value>
-            requires (appended_hash && sph::ranges::views::detail::copyable_or_borrowed<R>)
+            -> hash_verify_view< std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>
+            requires (appended_hash)
         {
-            return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, A, hash_verify_format<F, R>::value>(
+            return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>(
                 target_hash_size_, std::views::all(std::forward<R>(range)));
         }
 
         template <hash_range R>
         [[nodiscard]] constexpr auto operator()(R&& range) const
-            -> hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, A, hash_verify_format<F, hash_t>::value>
-            requires (!appended_hash && sph::ranges::views::detail::copyable_or_borrowed<hash_t>)
+            -> hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>
+            requires (!appended_hash)
         {
-            return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, A, hash_verify_format<F, hash_t>::value>(
+            return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>(
                 std::views::all(std::forward<R>(range)), std::views::all(hash_));
         }
 

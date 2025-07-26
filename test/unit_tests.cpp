@@ -6,6 +6,7 @@
 #include <fstream>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <magic_enum/magic_enum.hpp>
 #include <ranges>
 #include <sph/ranges/views/hash.h>
 #include <sph/ranges/views/hash_verify.h>
@@ -565,12 +566,46 @@ namespace
     auto hash_roundtrip_separate() -> void
     {
         // if F is raw, only works with T of size 1, 2, 3, 4, 6, 8, 12, 24
+        auto const detail{ std::format("{}: {}, {}", magic_enum::enum_name(A), magic_enum::enum_name(F),  typeid(T).name()) };
         constexpr auto separate{ sph::hash_site::separate };
         using sph::views::hash;
         using sph::views::hash_verify;
         std::array<unsigned char, 8> to_hash{ {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 }};
         auto ref{ to_hash  | hash<A, F, T, separate>(24) };
-        CHECK_EQ(*std::ranges::begin(to_hash | hash_verify(ref)), true);
+        if constexpr (F == sph::hash_format::padded)
+        {
+            // verify padded hash created correctly
+            auto ref_vec{ ref
+                | std::views::transform([](T v) -> std::array<uint8_t, sizeof(T)>
+                {
+                    std::array<uint8_t, sizeof(T)> tmp{};
+                    std::copy_n(reinterpret_cast<uint8_t*>(&v), sizeof(T), tmp.data());
+                    return tmp;
+                })
+                | std::views::join
+                | std::ranges::to<std::vector>() };
+            bool found{false};
+            size_t hash_length{ ref_vec.size() };
+            for (uint8_t v : ref_vec | std::views::reverse)
+            {
+                bool const valid{ v == 0x00 || v == 0x80 };
+                --hash_length;
+                CHECK_MESSAGE(valid, std::format("{}: Found invalid pad value", detail));
+                if (v == 0x80)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            CHECK_MESSAGE(found, std::format("{}: hash all zeros", detail));
+            CHECK_MESSAGE(hash_length == 24, std::format("{}: expected 24 byte hash, got {}", detail, hash_length));
+            CHECK_MESSAGE(*std::ranges::begin(to_hash | hash_verify<A, F>(ref)), std::format("{}: failed verify", detail));
+        }
+        else
+        {
+            CHECK_MESSAGE(*std::ranges::begin(to_hash | hash_verify<A, F>(ref)), std::format("{}: failed verify", detail));
+        }
+
     }
 
     template <sph::hash_algorithm A, sph::hash_format F>
@@ -764,7 +799,7 @@ TEST_CASE("hash_verify.vectors")
     auto test_name{ get_current_test_name() };
     for (auto const [index, test_vector] : std::views::enumerate(blake2b_test_vectors | std::views::filter([](auto&& x) { return x.key.empty() && x.salt.empty() && x.personal.empty(); })))
     {
-        auto verify {test_vector.input | sph::views::hash_verify<sph::hash_algorithm::blake2b>(test_vector.out) | std::ranges::to<std::vector>()};
+        auto verify {test_vector.input | std::ranges::to<std::vector>() | sph::views::hash_verify<sph::hash_algorithm::blake2b>(test_vector.out) | std::ranges::to<std::vector>()};
         CHECK_MESSAGE(verify.size() == 1, fmt::format("{}: failed blake on test vector {}", test_name, index));
         CHECK_MESSAGE(verify.front() == true, fmt::format("{}: failed blake on test vector {}", test_name, index));
     }
