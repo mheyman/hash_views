@@ -123,7 +123,8 @@ namespace sph::ranges::views::detail
          * @tparam F The format of the hash (padded or raw).
          */
     template<hash_range R, hashable_type T, sph::hash_algorithm A, sph::hash_format F>
-    class hash_verify_view : public std::ranges::view_interface<hash_verify_view<R, T, A, F>> {
+    class hash_verify_view : public std::ranges::view_interface<hash_verify_view<R, T, A, F>>
+    {
         bool verify_ok_{ false };
 
         using input_type = std::remove_cvref_t<std::ranges::range_value_t<R>>;
@@ -301,6 +302,9 @@ namespace sph::ranges::views::detail
         }
     };
 
+    template <typename>
+    struct hash_verify_always_false : std::false_type {};
+
     /**
      * Functor that, given a hashed+hash range or hashed range and a 
      * separate hash range, provides a range of a single boolean indicating
@@ -325,8 +329,8 @@ namespace sph::ranges::views::detail
 
         template <hash_range R>
         [[nodiscard]] constexpr auto operator()(R&& range) const
-            -> hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, A, hash_verify_format<F, R>::value>
-            requires appended_hash
+            -> hash_verify_view< std::views::all_t<R>, hash_verify_output<R, hash_t>, A, hash_verify_format<F, R>::value>
+            requires (appended_hash && sph::ranges::views::detail::copyable_or_borrowed<R>)
         {
             return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, A, hash_verify_format<F, R>::value>(
                 target_hash_size_, std::views::all(std::forward<R>(range)));
@@ -335,10 +339,25 @@ namespace sph::ranges::views::detail
         template <hash_range R>
         [[nodiscard]] constexpr auto operator()(R&& range) const
             -> hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, A, hash_verify_format<F, hash_t>::value>
-            requires (!appended_hash)
+            requires (!appended_hash && sph::ranges::views::detail::copyable_or_borrowed<hash_t>)
         {
             return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, A, hash_verify_format<F, hash_t>::value>(
                 std::views::all(std::forward<R>(range)), std::views::all(hash_));
+        }
+
+        template <hash_range R>
+        [[nodiscard]] constexpr auto operator()(R&& range) const-> std::array<bool, 0>
+            requires (appended_hash && !sph::ranges::views::detail::copyable_or_borrowed<R>)
+        {
+            // Here, a copy could be made and, maybe, if a low-cost method
+            // exists, that should get done here.
+            static_assert(hash_verify_always_false<R>::value,
+                "The range with appended hash supplied to hash_verify must be "
+                "copyable or a borrowed range. If you have a move-only range "
+                "(like owning_view), make a copy (like:  "
+                "`range_with_appended_hash | std::ranges::to<std::vector>() | "
+                "hash_verify()`).");
+            return {};
         }
     };
 

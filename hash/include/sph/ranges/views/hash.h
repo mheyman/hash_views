@@ -66,6 +66,9 @@ namespace sph::ranges::views
         template<std::ranges::viewable_range R, typename T = uint8_t, sph::hash_algorithm A = sph::hash_algorithm::blake2b, sph::hash_format F, sph::hash_site S = sph::hash_site::separate>
         hash_view(R&&) -> hash_view<R, T, A, F, S>;
 
+        template <typename>
+        struct hash_always_false : std::false_type {};
+
         /**
          * Functor that, given a range, provides a hashed view of that range.
          * @tparam T The type to hash into.
@@ -76,10 +79,28 @@ namespace sph::ranges::views
             size_t target_hash_size_;
         public:
             explicit hash_fn(size_t target_hash_size) noexcept : target_hash_size_{ target_hash_size } {}
+
             template <sph::ranges::views::detail::hash_range R>
             [[nodiscard]] constexpr auto operator()(R&& range) const -> hash_view<std::views::all_t<R>, T, A, F, S>
+                requires (sph::ranges::views::detail::copyable_or_borrowed<R> || S == sph::hash_site::separate)
             {
                 return hash_view<std::views::all_t<R>, T, A, F, S>(target_hash_size_, std::views::all(std::forward<R>(range)));
+            }
+
+            template <sph::ranges::views::detail::hash_range R>
+            [[nodiscard]] constexpr auto operator()(R&&) const -> std::array<T, 0>
+                requires (!sph::ranges::views::detail::copyable_or_borrowed<R> && S == sph::hash_site::append)
+            {
+                // Here, a copy could be made and, maybe, if a low-cost method
+                // exists, that should get done here.
+                static_assert(hash_always_false<R>::value,
+                    "The range supplied to hash must be copyable or a "
+                    "borrowed range. If you have a move-only range (like "
+                    "owning_view), make a copy (like:  "
+                    "`range_to_hash | std::ranges::to<std::vector>() | "
+                    "hash()`).");
+                return {};
+
             }
         };
     }

@@ -58,6 +58,8 @@ namespace sph::ranges::views::detail
     template<hash_range R, hashable_type T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
     class hash_iterator  // NOLINT(clang-diagnostic-padded)
     {
+        using const_hashed_iterator_t = std::ranges::const_iterator_t<std::remove_reference_t<R>>;
+        using const_hashed_sentinel_t = std::ranges::const_sentinel_t<std::remove_reference_t<R>>;
     public:
         using iterator_concept = std::input_iterator_tag;
         using iterator_category = std::input_iterator_tag;
@@ -85,8 +87,8 @@ namespace sph::ranges::views::detail
 #pragma clang diagnostic pop
 #endif
         std::unique_ptr<hash_processor_t> hash_;
-        std::ranges::const_iterator_t<R> to_hash_current_;
-        std::ranges::const_sentinel_t<R> to_hash_end_;
+        const_hashed_iterator_t to_hash_current_;
+        const_hashed_sentinel_t to_hash_end_;
         T value_;
         mutable bool hash_read_complete_{ false };
         mutable bool complete_{ false };
@@ -101,7 +103,7 @@ namespace sph::ranges::views::detail
          * storable and an exception will be thrown when that point in the
          * output range is reached.
          */
-        hash_iterator(std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end, size_t hash_byte_count)
+        hash_iterator(const_hashed_iterator_t begin, const_hashed_sentinel_t end, size_t hash_byte_count)
             : hash_{ std::make_unique<hash_processor_t>(get_hash_size<A>(hash_byte_count)) }
             , to_hash_current_(std::move(begin))
             , to_hash_end_(std::move(end))
