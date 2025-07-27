@@ -90,7 +90,7 @@ namespace sph::ranges::views::detail
         const_hashed_iterator_t to_hash_current_;
         const_hashed_sentinel_t to_hash_end_;
         T value_;
-        mutable bool hash_read_complete_{ false };
+        mutable bool hash_read_complete_;
         mutable bool complete_{ false };
     public:
         /**
@@ -108,6 +108,7 @@ namespace sph::ranges::views::detail
             , to_hash_current_(std::move(begin))
             , to_hash_end_(std::move(end))
             , value_{ hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); }) }
+            , hash_read_complete_{ hash_->complete() }
         {
         }
 

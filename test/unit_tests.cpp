@@ -122,6 +122,21 @@ namespace
     std::vector<test_vector> const sha256_test_vectors {get_test_vector("sha256.json")};
     std::vector<test_vector> const sha512_test_vectors {get_test_vector("sha512.json")};
 
+    template<typename H>
+    constexpr auto hash_to_byte_vector(H&& hash) -> std::vector<uint8_t>
+    {
+        using value_t = std::remove_cvref_t<std::ranges::range_value_t<H>>;
+         return std::forward<H>(hash)
+            | std::views::transform([](value_t v) -> std::array<uint8_t, sizeof(value_t)>
+            {
+                std::array<uint8_t, sizeof(value_t)> tmp{};
+                std::copy_n(reinterpret_cast<uint8_t*>(&v), sizeof(value_t), tmp.data());
+                return tmp;
+            })
+            | std::views::join
+            | std::ranges::to<std::vector>();
+    }
+
     template <sph::hash_algorithm A>
     auto hash_overloads() -> void
     {
@@ -570,20 +585,14 @@ namespace
         constexpr auto separate{ sph::hash_site::separate };
         using sph::views::hash;
         using sph::views::hash_verify;
+        T x{};
+        (void)x;
         std::array<unsigned char, 8> to_hash{ {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 }};
         auto ref{ to_hash  | hash<A, F, T, separate>(24) };
         if constexpr (F == sph::hash_format::padded)
         {
             // verify padded hash created correctly
-            auto ref_vec{ ref
-                | std::views::transform([](T v) -> std::array<uint8_t, sizeof(T)>
-                {
-                    std::array<uint8_t, sizeof(T)> tmp{};
-                    std::copy_n(reinterpret_cast<uint8_t*>(&v), sizeof(T), tmp.data());
-                    return tmp;
-                })
-                | std::views::join
-                | std::ranges::to<std::vector>() };
+            auto ref_vec{ hash_to_byte_vector(ref) };
             bool found{false};
             size_t hash_length{ ref_vec.size() };
             for (uint8_t v : ref_vec | std::views::reverse)
@@ -603,6 +612,8 @@ namespace
         }
         else
         {
+            auto ref_vec{ hash_to_byte_vector(ref) };
+            (void)ref_vec;
             CHECK_MESSAGE(*std::ranges::begin(to_hash | hash_verify<A, F>(ref)), std::format("{}: failed verify", detail));
         }
 
