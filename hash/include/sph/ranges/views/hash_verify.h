@@ -6,6 +6,7 @@
 #include <sph/hash_format.h>
 #include <sph/ranges/views/detail/hash_util.h>
 #include <sph/ranges/views/detail/single_bool_iterator.h>
+#include <sph/ranges/views/hash.h>
 
 namespace sph::ranges::views::detail
 {
@@ -68,6 +69,25 @@ namespace sph::ranges::views::detail
                         hash_verify_format_padded>,
                 F>();
     };
+
+    // Targeted operator| overloads: accept a `hash_view` on the left and
+    // forward a `std::views::all(...)` of it to the callable on the
+    // right. Constrain participation so these only participate when the
+    // callable is invocable with the view type; this avoids interfering
+    // with the standard range adaptor machinery.
+    template <typename R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, typename Fn>
+    requires requires(Fn && fn, hash_view<R, T, A, F, S> && v) { std::forward<Fn>(fn)(std::views::all(std::move(v))); }
+    [[nodiscard]] inline decltype(auto) operator|(hash_view<R, T, A, F, S> && lhs, Fn && fn)
+    {
+        return std::forward<Fn>(fn)(std::views::all(std::move(lhs)));
+    }
+
+    template <typename R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, typename Fn>
+    requires requires(Fn && fn, hash_view<R, T, A, F, S> const & v) { std::forward<Fn>(fn)(std::views::all(v)); }
+    [[nodiscard]] inline decltype(auto) operator|(hash_view<R, T, A, F, S> const & lhs, Fn && fn)
+    {
+        return std::forward<Fn>(fn)(std::views::all(lhs));
+    }
 
 
     /**
