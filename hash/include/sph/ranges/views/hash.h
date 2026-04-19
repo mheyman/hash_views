@@ -25,13 +25,15 @@ namespace sph::ranges::views
         template<hash_range R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S>
             requires std::ranges::input_range<R> && sph::ranges::views::detail::hashable_type<T> && std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
         class hash_view : public std::ranges::view_interface<hash_view<R, T, A, F, S>> {
-            R input_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-            size_t target_hash_size_;
         public:
             using view_t = std::views::all_t<R>;
-            using iterator = hash_iterator<view_t, T, A, F, S, end_of_input::no_appended_hash>;
-            using sentinel = hash_sentinel<view_t, T, A, F, S, end_of_input::no_appended_hash>;
+        private:
+            R input_;  // store the original range
+            size_t target_hash_size_;
+            using iterator = hash_iterator<R, T, A, F, S, end_of_input::no_appended_hash>;
+            using sentinel = hash_sentinel<R, T, A, F, S, end_of_input::no_appended_hash>;
 
+        public:
             /**
              * Initialize a new instance of the hash_view class.
              *
@@ -53,10 +55,10 @@ namespace sph::ranges::views
 
             auto begin() const -> iterator
             {
-                auto v = std::views::all(input_);
+                // Use the stored view's iterators directly.
                 return iterator(
-                    std::ranges::begin(v),
-                    std::ranges::end(v),
+                    std::ranges::begin(input_),
+                    std::ranges::end(input_),
                     target_hash_size_
                 );
             }

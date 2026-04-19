@@ -70,23 +70,33 @@ namespace sph::ranges::views::detail
                 F>();
     };
 
-    // Targeted operator| overloads: accept a `hash_view` on the left and
-    // forward a `std::views::all(...)` of it to the callable on the
-    // right. Constrain participation so these only participate when the
-    // callable is invocable with the view type; this avoids interfering
-    // with the standard range adaptor machinery.
+    // Minimal operator| overloads for hash_view. Use if constexpr to
+    // prefer calling the adaptor with the hash_view directly when
+    // possible, otherwise forward a view produced by std::views::all.
     template <typename R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, typename Fn>
-    requires requires(Fn && fn, hash_view<R, T, A, F, S> && v) { std::forward<Fn>(fn)(std::views::all(std::move(v))); }
     [[nodiscard]] inline decltype(auto) operator|(hash_view<R, T, A, F, S> && lhs, Fn && fn)
     {
-        return std::forward<Fn>(fn)(std::views::all(std::move(lhs)));
+        if constexpr (std::invocable<Fn, hash_view<R, T, A, F, S>&&>)
+        {
+            return std::forward<Fn>(fn)(std::move(lhs));
+        }
+        else
+        {
+            return std::forward<Fn>(fn)(std::views::all(std::move(lhs)));
+        }
     }
 
     template <typename R, typename T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, typename Fn>
-    requires requires(Fn && fn, hash_view<R, T, A, F, S> const & v) { std::forward<Fn>(fn)(std::views::all(v)); }
     [[nodiscard]] inline decltype(auto) operator|(hash_view<R, T, A, F, S> const & lhs, Fn && fn)
     {
-        return std::forward<Fn>(fn)(std::views::all(lhs));
+        if constexpr (std::invocable<Fn, hash_view<R, T, A, F, S> const &>)
+        {
+            return std::forward<Fn>(fn)(lhs);
+        }
+        else
+        {
+            return std::forward<Fn>(fn)(std::views::all(lhs));
+        }
     }
 
 
