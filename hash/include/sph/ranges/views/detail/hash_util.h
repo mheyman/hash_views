@@ -1,4 +1,6 @@
 #pragma once
+#include <concepts>
+#include <ranges>
 #include <tuple>
 #include <type_traits>
 
@@ -18,5 +20,5 @@ namespace sph::ranges::views::detail
 
     template <typename R>
     concept copyable_or_borrowed =
-        std::copyable<R> || std::ranges::borrowed_range<std::remove_cvref_t<R>>;
+        std::copyable<std::remove_cvref_t<R>> || std::ranges::borrowed_range<R>;
 }

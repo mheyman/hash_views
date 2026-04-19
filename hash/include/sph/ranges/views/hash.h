@@ -1,5 +1,6 @@
 #pragma once
 #include <ranges>
+#include <sph/blake2b_parameters.h>
 #include <sph/hash_algorithm.h>
 #include <sph/hash_format.h>
 #include <sph/hash_site.h>
@@ -28,8 +29,10 @@ namespace sph::ranges::views
         public:
             using view_t = std::views::all_t<R>;
         private:
+            using algorithm_parameters_t = sph::ranges::views::detail::algorithm_parameters_t<A>;
             R input_;  // store the original range
             size_t target_hash_size_;
+            algorithm_parameters_t algorithm_parameters_{};
             using iterator = hash_iterator<R, T, A, F, S, end_of_input::no_appended_hash>;
             using sentinel = hash_sentinel<R, T, A, F, S, end_of_input::no_appended_hash>;
 
@@ -44,8 +47,15 @@ namespace sph::ranges::views
              * output; it may extend to fill multibyte output.
              * @param input the range to hash.
              */
-            explicit hash_view(size_t target_hash_size, R&& input) noexcept
+            explicit hash_view(size_t target_hash_size, R&& input)
                 : input_(std::move(input)), target_hash_size_{ detail::get_hash_size<A>(target_hash_size) } {}
+
+            hash_view(size_t target_hash_size, R&& input, algorithm_parameters_t algorithm_parameters)
+                requires (A == sph::hash_algorithm::blake2b)
+                : input_(std::move(input))
+                , target_hash_size_{ detail::get_hash_size<A>(target_hash_size) }
+                , algorithm_parameters_{ algorithm_parameters }
+            {}
 
             hash_view(hash_view const&) = default;
             hash_view(hash_view&&) noexcept = default;
@@ -56,11 +66,23 @@ namespace sph::ranges::views
             auto begin() const -> iterator
             {
                 // Use the stored view's iterators directly.
-                return iterator(
-                    std::ranges::begin(input_),
-                    std::ranges::end(input_),
-                    target_hash_size_
-                );
+                if constexpr (A == sph::hash_algorithm::blake2b)
+                {
+                    return iterator(
+                        std::ranges::begin(input_),
+                        std::ranges::end(input_),
+                        target_hash_size_,
+                        algorithm_parameters_
+                    );
+                }
+                else
+                {
+                    return iterator(
+                        std::ranges::begin(input_),
+                        std::ranges::end(input_),
+                        target_hash_size_
+                    );
+                }
             }
 
             // ReSharper disable once CppMemberFunctionMayBeStatic
@@ -81,14 +103,30 @@ namespace sph::ranges::views
         class hash_fn : public std::ranges::range_adaptor_closure<hash_fn<T, A, F, S>>
         {
             size_t target_hash_size_;
+            sph::ranges::views::detail::algorithm_parameters_t<A> algorithm_parameters_{};
         public:
             explicit hash_fn(size_t target_hash_size) noexcept : target_hash_size_{ target_hash_size } {}
+
+            [[nodiscard]] auto with_blake2b_parameters(sph::blake2b_parameters parameters) const -> hash_fn
+                requires (A == sph::hash_algorithm::blake2b)
+            {
+                auto result{ *this };
+                result.algorithm_parameters_ = parameters;
+                return result;
+            }
 
             template <sph::ranges::views::detail::hash_range R>
             [[nodiscard]] constexpr auto operator()(R&& range) const -> hash_view<std::views::all_t<R>, T, A, F, S>
                 requires (sph::ranges::views::detail::copyable_or_borrowed<R> || S == sph::hash_site::separate)
             {
-                return hash_view<std::views::all_t<R>, T, A, F, S>(target_hash_size_, std::views::all(std::forward<R>(range)));
+                if constexpr (A == sph::hash_algorithm::blake2b)
+                {
+                    return hash_view<std::views::all_t<R>, T, A, F, S>(target_hash_size_, std::views::all(std::forward<R>(range)), algorithm_parameters_);
+                }
+                else
+                {
+                    return hash_view<std::views::all_t<R>, T, A, F, S>(target_hash_size_, std::views::all(std::forward<R>(range)));
+                }
             }
 
             template <sph::ranges::views::detail::hash_range R>

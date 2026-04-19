@@ -1,13 +1,23 @@
 #pragma once
 #include <cassert>
+#include <cstdint>
+#include <memory>
+#include <ranges>
+#include <span>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
+#include <vector>
+#include <sph/blake2b_parameters.h>
 #include <sph/hash_algorithm.h>
 #include <sph/hash_format.h>
 #include <sph/hash_site.h>
+#include <sph/ranges/views/detail/blake3.h>
 #include <sph/ranges/views/detail/blake2b.h>
 #include <sph/ranges/views/detail/get_hash_size.h>
 #include <sph/ranges/views/detail/hash_processor.h>
+#include <sph/ranges/views/detail/sha3_256.h>
+#include <sph/ranges/views/detail/sha3_512.h>
 #include <sph/ranges/views/detail/sha256.h>
 #include <sph/ranges/views/detail/sha512.h>
 #include <sph/ranges/views/detail/rolling_buffer.h>
@@ -58,8 +68,9 @@ namespace sph::ranges::views::detail
     template<hash_range R, hashable_type T, sph::hash_algorithm A, sph::hash_format F, sph::hash_site S, end_of_input E>
     class hash_iterator  // NOLINT(clang-diagnostic-padded)
     {
-        using const_hashed_iterator_t = std::ranges::const_iterator_t<std::remove_reference_t<R>>;
-        using const_hashed_sentinel_t = std::ranges::const_sentinel_t<std::remove_reference_t<R>>;
+        using base_range_t = std::add_const_t<std::remove_reference_t<R>>;
+        using const_hashed_iterator_t = std::ranges::iterator_t<base_range_t>;
+        using const_hashed_sentinel_t = std::ranges::sentinel_t<base_range_t>;
     public:
         using iterator_concept = std::input_iterator_tag;
         using iterator_category = std::input_iterator_tag;
@@ -71,11 +82,16 @@ namespace sph::ranges::views::detail
         using output_type = std::remove_cvref_t<T>;
     private:
         static constexpr bool single_byte_input{ sizeof(input_type) == 1 };
+        using algorithm_parameters_t = sph::ranges::views::detail::algorithm_parameters_t<A>;
         struct input_value_with_position { input_type value; size_t position; };
         using input_value_t = std::conditional_t < sizeof(input_type) == 1, hash_iterator_empty, input_value_with_position>;
-        using hash_processor_t = hash_processor<T, S, F, std::conditional_t<A == sph::hash_algorithm::blake2b, detail::blake2b, 
+        using hash_processor_t = hash_processor<T, S, F,
+            std::conditional_t<A == sph::hash_algorithm::blake2b, detail::blake2b,
             std::conditional_t<A == sph::hash_algorithm::sha512, detail::sha512,
-            std::conditional_t<A == sph::hash_algorithm::sha256, detail::sha256, void>>>>;
+            std::conditional_t<A == sph::hash_algorithm::sha256, detail::sha256,
+            std::conditional_t<A == sph::hash_algorithm::sha3_256, detail::sha3_256,
+            std::conditional_t<A == sph::hash_algorithm::sha3_512, detail::sha3_512,
+            std::conditional_t<A == sph::hash_algorithm::blake3, detail::blake3, void>>>>>>>;
         using rolling_buffer_t = typename select_rolling_buffer_type<T, A, E == end_of_input::skip_appended_hash>::type;
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -105,6 +121,16 @@ namespace sph::ranges::views::detail
          */
         hash_iterator(const_hashed_iterator_t begin, const_hashed_sentinel_t end, size_t hash_byte_count)
             : hash_{ std::make_unique<hash_processor_t>(get_hash_size<A>(hash_byte_count)) }
+            , to_hash_current_(std::move(begin))
+            , to_hash_end_(std::move(end))
+            , value_{ hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); }) }
+            , hash_read_complete_{ hash_->complete() }
+        {
+        }
+
+        hash_iterator(const_hashed_iterator_t begin, const_hashed_sentinel_t end, size_t hash_byte_count, algorithm_parameters_t parameters)
+            requires (A == sph::hash_algorithm::blake2b)
+            : hash_{ std::make_unique<hash_processor_t>(get_hash_size<A>(hash_byte_count), parameters) }
             , to_hash_current_(std::move(begin))
             , to_hash_end_(std::move(end))
             , value_{ hash_->template process<T>([this]() -> std::tuple<bool, uint8_t> { return next_byte(); }) }
@@ -146,6 +172,13 @@ namespace sph::ranges::views::detail
         {
             verify_can_hash();
             return hash_->hash();
+        }
+
+        auto appended_hash() const -> std::vector<uint8_t>
+            requires (E == end_of_input::skip_appended_hash)
+        {
+            verify_can_hash();
+            return rolling_buffer_.hash(hash_->target_hash_size());
         }
 
         /**

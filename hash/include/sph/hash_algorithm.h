@@ -14,5 +14,8 @@ namespace sph
         sha256 = 0,
         sha512 = 1,
         blake2b = 2,
+        sha3_256 = 3,
+        sha3_512 = 4,
+        blake3 = 5,
     };
 }

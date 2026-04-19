@@ -1,15 +1,26 @@
 // ReSharper disable once CppInconsistentNaming
 #define _ENABLE_STL_INTERNAL_CHECK  // NOLINT(clang-diagnostic-reserved-macro-identifier)
 #include <array>
+#include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <magic_enum/magic_enum.hpp>
 #include <ranges>
+#include <span>
+#include <sph/ranges/views/detail/blake2b.h>
+#include <sph/ranges/views/detail/blake3.h>
+#include <sph/ranges/views/detail/sha3_256.h>
+#include <sph/ranges/views/detail/sha3_512.h>
+#include <sph/ranges/views/detail/sha256.h>
+#include <sph/ranges/views/detail/sha512.h>
 #include <sph/ranges/views/hash.h>
 #include <sph/ranges/views/hash_verify.h>
+#include <sstream>
+#include <string_view>
 #include <vector>
 #include <daw/json/daw_json_link.h>
 #ifdef __clang__
@@ -27,6 +38,7 @@ namespace
     struct test_vector
     {
         size_t outlen;
+        size_t input_repeat_count;
         std::vector<uint8_t> out;
         std::vector<uint8_t> input;
         std::vector<uint8_t> key;
@@ -37,6 +49,7 @@ namespace
     struct test_vector_json
     {
         size_t outlen;
+        size_t input_repeat_count;
         std::string out;
         std::string input;
         std::string key;
@@ -44,28 +57,24 @@ namespace
         std::string personal;
         auto test_vector() const -> test_vector
         {
+            auto hexstring_to_bytes = [](std::string const& value) -> std::vector<uint8_t>
+            {
+                return value
+                    | std::views::chunk(2)
+                    | std::views::transform([](auto&& v) -> uint8_t
+                    {
+                        return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
+                    })
+                    | std::ranges::to<std::vector<uint8_t>>();
+            };
             return ::test_vector{
                 .outlen = outlen,
-                .out = out | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
-                {
-                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
-                }) | std::ranges::to<std::vector<uint8_t>>(),
-                .input = input | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
-                {
-                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
-                }) | std::ranges::to<std::vector<uint8_t>>(),
-                .key = key | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
-                {
-                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
-                }) | std::ranges::to<std::vector<uint8_t>>(),
-                .salt = salt | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
-                {
-                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
-                }) | std::ranges::to<std::vector<uint8_t>>(),
-                .personal = personal | std::views::chunk(2) | std::views::transform([](auto&& v) -> uint8_t
-                {
-                    return static_cast<uint8_t>(std::stoul(std::string(v.begin(), v.end()), nullptr, 16));
-                }) | std::ranges::to<std::vector<uint8_t>>()
+                .input_repeat_count = input_repeat_count,
+                .out = hexstring_to_bytes(out),
+                .input = hexstring_to_bytes(input),
+                .key = hexstring_to_bytes(key),
+                .salt = hexstring_to_bytes(salt),
+                .personal = hexstring_to_bytes(personal)
             };
         }
     };
@@ -77,6 +86,7 @@ namespace daw::json
     template<>
     struct json_data_contract<test_vector_json> {
         static constexpr char outlen[] = "outlen";
+        static constexpr char input_repeat_count[] = "input_repeat_count";
         static constexpr char out[] = "out";
         static constexpr char input[] = "input";
         static constexpr char key[] = "key";
@@ -84,6 +94,7 @@ namespace daw::json
         static constexpr char personal[] = "personal";
         using type = json_member_list<
             json_number<outlen, size_t>,
+            json_number<input_repeat_count, size_t>,
             json_string<out, std::string>,
             json_string<input, std::string>,
             json_string<key, std::string>,
@@ -119,8 +130,20 @@ namespace
     }
 
     std::vector<test_vector> const blake2b_test_vectors {get_test_vector("blake2b.json")};
+    std::vector<test_vector> const blake3_test_vectors {get_test_vector("blake3.json")};
     std::vector<test_vector> const sha256_test_vectors {get_test_vector("sha256.json")};
+    std::vector<test_vector> const sha3_256_test_vectors {get_test_vector("sha3_256.json")};
+    std::vector<test_vector> const sha3_512_test_vectors {get_test_vector("sha3_512.json")};
     std::vector<test_vector> const sha512_test_vectors {get_test_vector("sha512.json")};
+
+    auto blake2b_parameters_from_test_vector(test_vector const& v) -> sph::blake2b_parameters
+    {
+        return sph::blake2b_parameters{
+            .key = v.key,
+            .salt = v.salt,
+            .personal = v.personal
+        };
+    }
 
     template<typename H>
     constexpr auto hash_to_byte_vector(H&& hash) -> std::vector<uint8_t>
@@ -135,6 +158,195 @@ namespace
             })
             | std::views::join
             | std::ranges::to<std::vector>();
+    }
+
+    template<typename T>
+    auto byte_vector_to_hash_vector(std::span<uint8_t const> bytes) -> std::vector<T>
+    {
+        if (bytes.size() % sizeof(T) != 0)
+        {
+            throw std::runtime_error(std::format("Byte count {} is not divisible by element size {}", bytes.size(), sizeof(T)));
+        }
+
+        std::vector<T> result(bytes.size() / sizeof(T));
+        for (size_t index = 0; index < result.size(); ++index)
+        {
+            std::memcpy(&result[index], bytes.data() + (index * sizeof(T)), sizeof(T));
+        }
+        return result;
+    }
+
+    template <sph::hash_algorithm A>
+    struct detail_hash_type;
+
+    template <>
+    struct detail_hash_type<sph::hash_algorithm::blake2b> { using type = sph::ranges::views::detail::blake2b; };
+
+    template <>
+    struct detail_hash_type<sph::hash_algorithm::blake3> { using type = sph::ranges::views::detail::blake3; };
+
+    template <>
+    struct detail_hash_type<sph::hash_algorithm::sha256> { using type = sph::ranges::views::detail::sha256; };
+
+    template <>
+    struct detail_hash_type<sph::hash_algorithm::sha3_256> { using type = sph::ranges::views::detail::sha3_256; };
+
+    template <>
+    struct detail_hash_type<sph::hash_algorithm::sha3_512> { using type = sph::ranges::views::detail::sha3_512; };
+
+    template <>
+    struct detail_hash_type<sph::hash_algorithm::sha512> { using type = sph::ranges::views::detail::sha512; };
+
+    template <sph::hash_algorithm A>
+    using detail_hash_t = typename detail_hash_type<A>::type;
+
+    template <typename H>
+    auto feed_test_vector(H& hasher, test_vector const& test_vector) -> void
+    {
+        std::array<uint8_t, H::chunk_size> chunk{};
+        size_t filled{};
+
+        auto append_bytes = [&](std::span<uint8_t const> bytes) -> void
+        {
+            while (!bytes.empty())
+            {
+                auto const bytes_needed{ H::chunk_size - filled };
+                auto const copy_count{ std::min(bytes_needed, bytes.size()) };
+                std::memcpy(chunk.data() + filled, bytes.data(), copy_count);
+                filled += copy_count;
+                bytes = bytes.subspan(copy_count);
+                if (filled == H::chunk_size)
+                {
+                    hasher.update(std::span<uint8_t const, H::chunk_size>{ chunk });
+                    filled = 0;
+                }
+            }
+        };
+
+        for (size_t repeat = 0; repeat < test_vector.input_repeat_count; ++repeat)
+        {
+            append_bytes(test_vector.input);
+        }
+
+        hasher.final(std::span<uint8_t const>{ chunk.data(), filled });
+    }
+
+    template <sph::hash_algorithm A>
+    auto hash_test_vector(test_vector const& test_vector) -> std::vector<uint8_t>
+    {
+        if constexpr (A == sph::hash_algorithm::blake2b)
+        {
+            auto hasher{ detail_hash_t<A>{ test_vector.outlen, blake2b_parameters_from_test_vector(test_vector) } };
+            feed_test_vector(hasher, test_vector);
+            auto hash{ hasher.hash() };
+            return { hash.begin(), hash.end() };
+        }
+        else
+        {
+            auto hasher{ detail_hash_t<A>{ test_vector.outlen } };
+            feed_test_vector(hasher, test_vector);
+            auto hash{ hasher.hash() };
+            return { hash.begin(), hash.end() };
+        }
+    }
+
+    template <sph::hash_algorithm A>
+    auto verify_test_vector(test_vector const& test_vector) -> std::vector<bool>
+    {
+        return { hash_test_vector<A>(test_vector) == test_vector.out };
+    }
+
+    auto find_padding_terminator(std::vector<uint8_t>& bytes) -> std::vector<uint8_t>::iterator
+    {
+        size_t current{ bytes.size() };
+        while (current > 0 && bytes[current - 1] == 0x00)
+        {
+            --current;
+        }
+
+        if (current == 0 || bytes[current - 1] != 0x80)
+        {
+            return bytes.end();
+        }
+
+        return bytes.begin() + static_cast<ptrdiff_t>(current - 1);
+    }
+
+    class single_pass_byte_view : public std::ranges::view_interface<single_pass_byte_view>
+    {
+        std::string_view data_;
+
+        struct iterator
+        {
+            using iterator_concept = std::input_iterator_tag;
+            using iterator_category = std::input_iterator_tag;
+            using value_type = char;
+            using difference_type = std::ptrdiff_t;
+
+            std::string_view data{};
+            size_t index{};
+
+            auto operator*() const -> char
+            {
+                return data[index];
+            }
+
+            auto operator++() -> iterator&
+            {
+                ++index;
+                return *this;
+            }
+
+            auto operator++(int) -> iterator
+            {
+                auto tmp{ *this };
+                ++(*this);
+                return tmp;
+            }
+
+            auto operator==(std::default_sentinel_t) const -> bool
+            {
+                return index >= data.size();
+            }
+        };
+
+    public:
+        explicit single_pass_byte_view(std::string_view data) : data_{ data } {}
+
+        auto begin() const -> iterator
+        {
+            return iterator{ data_, 0 };
+        }
+
+        auto end() const -> std::default_sentinel_t
+        {
+            return {};
+        }
+    };
+
+    template <sph::hash_algorithm A, typename MakeRange>
+    auto check_range_category(std::string_view detail, MakeRange make_range) -> void
+    {
+        constexpr std::string_view payload{ "hello world" };
+        auto const expected{
+            payload
+            | sph::views::hash<A>(24)
+            | std::ranges::to<std::vector>()
+        };
+        auto const hashed{
+            make_range()
+            | sph::views::hash<A>(24)
+            | std::ranges::to<std::vector>()
+        };
+        CHECK_MESSAGE(hashed == expected, std::format("{}: hash mismatch", detail));
+
+        auto const verified{
+            make_range()
+            | sph::views::hash_verify<A>(expected)
+            | std::ranges::to<std::vector>()
+        };
+        CHECK_MESSAGE(verified.size() == 1, std::format("{}: verify result size mismatch", detail));
+        CHECK_MESSAGE(verified.front(), std::format("{}: verify failed", detail));
     }
 
     template <sph::hash_algorithm A>
@@ -672,24 +884,47 @@ namespace
     template <sph::hash_algorithm A, sph::hash_format F, sph::ranges::views::detail::hashable_type T>
     auto hash_roundtrip_append() -> void
     {
-        // if F is raw, only works with T of size 1, 2, 3, 4, 6, 8, 12, 16, 24, 48
+        // Append mode preserves the original input bytes and then appends the hash bytes.
+        // For padded hashes, the suffix may be longer than the raw hash due to padding.
         constexpr auto append{ sph::hash_site::append };
         using sph::views::hash;
-        using sph::views::hash_verify;
-        // hashed_range must be copyable or borrowed.
+        std::array<unsigned char, 24> const to_hash
+        {
+            {
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+                0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            }
+        };
         auto hashed_range
         {
-            std::array<unsigned char, 24>
-            {
-                {
-                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-                    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-                }
-            }
-            | hash<A, F, T, append>(24) | std::ranges::to<std::vector>() };
-        //auto verified_range{ hashed_range | std::ranges::to<std::vector> | hash_verify(24) };
-        //CHECK_EQ(*std::ranges::begin(verified_range), true);
+            to_hash
+            | hash<A, F, T, append>(24)
+            | std::ranges::to<std::vector>()
+        };
+        auto const bytes{ hash_to_byte_vector(hashed_range) };
+        auto const expected_raw_hash{
+            to_hash
+            | hash<A, uint8_t, sph::hash_format::raw>(24)
+            | std::ranges::to<std::vector>()
+        };
+
+        CHECK(std::ranges::equal(bytes | std::views::take(to_hash.size()), to_hash));
+
+        std::vector<uint8_t> const suffix(bytes.begin() + static_cast<ptrdiff_t>(to_hash.size()), bytes.end());
+        if constexpr (F == sph::hash_format::raw)
+        {
+            CHECK(suffix == expected_raw_hash);
+        }
+        else
+        {
+            auto padded_suffix{ suffix };
+            auto terminator = find_padding_terminator(padded_suffix);
+            REQUIRE(terminator != padded_suffix.end());
+            CHECK(static_cast<size_t>(std::distance(padded_suffix.begin(), terminator)) == expected_raw_hash.size());
+            CHECK(std::ranges::equal(expected_raw_hash, padded_suffix | std::views::take(expected_raw_hash.size())));
+            CHECK(std::ranges::all_of(std::next(terminator), padded_suffix.end(), [](uint8_t value) { return value == 0x00; }));
+        }
     }
 
     template <sph::hash_algorithm A, sph::hash_format F>
@@ -754,21 +989,39 @@ namespace
 TEST_CASE("hash.vectors")
 {
     auto test_name{ get_current_test_name() };
-    for (auto const [index, test_vector] : std::views::enumerate(blake2b_test_vectors | std::views::filter([](auto &&x) { return x.key.empty() && x.salt.empty() && x.personal.empty();})))
+    for (auto const [index, test_vector] : std::views::enumerate(blake2b_test_vectors))
     {
-        auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::blake2b>(test_vector.outlen) | std::ranges::to<std::vector>();
+        auto hash = hash_test_vector<sph::hash_algorithm::blake2b>(test_vector);
         CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed blake on test vector {}", test_name, index));
+    }
+
+    for (auto const [index, test_vector] : std::views::enumerate(blake3_test_vectors))
+    {
+        auto hash = hash_test_vector<sph::hash_algorithm::blake3>(test_vector);
+        CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed blake3 on test vector {}", test_name, index));
     }
 
     for (auto const [index, test_vector] : std::views::enumerate(sha256_test_vectors))
     {
-        auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::sha256>(test_vector.outlen) | std::ranges::to<std::vector>();
+        auto hash = hash_test_vector<sph::hash_algorithm::sha256>(test_vector);
         CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed sha256 on test vector {}", test_name, index));
+    }
+
+    for (auto const [index, test_vector] : std::views::enumerate(sha3_256_test_vectors))
+    {
+        auto hash = hash_test_vector<sph::hash_algorithm::sha3_256>(test_vector);
+        CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed sha3/256 on test vector {}", test_name, index));
+    }
+
+    for (auto const [index, test_vector] : std::views::enumerate(sha3_512_test_vectors))
+    {
+        auto hash = hash_test_vector<sph::hash_algorithm::sha3_512>(test_vector);
+        CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed sha3/512 on test vector {}", test_name, index));
     }
 
     for (auto const [index, test_vector] : std::views::enumerate(sha512_test_vectors))
     {
-        auto hash = test_vector.input | sph::views::hash<sph::hash_algorithm::sha512>(test_vector.outlen) | std::ranges::to<std::vector>();
+        auto hash = hash_test_vector<sph::hash_algorithm::sha512>(test_vector);
         CHECK_MESSAGE(hash == test_vector.out, fmt::format("{}: failed sha512 on test vector {}", test_name, index));
     }
 }
@@ -779,9 +1032,21 @@ TEST_CASE("hash.hash_overloads")
     {
         hash_overloads<sph::hash_algorithm::blake2b>();
     }
+    SUBCASE("blake3")
+    {
+        hash_overloads<sph::hash_algorithm::blake3>();
+    }
     SUBCASE("sha256")
     {
         hash_overloads<sph::hash_algorithm::sha256>();
+    }
+    SUBCASE("sha3_256")
+    {
+        hash_overloads<sph::hash_algorithm::sha3_256>();
+    }
+    SUBCASE("sha3_512")
+    {
+        hash_overloads<sph::hash_algorithm::sha3_512>();
     }
     SUBCASE("sha512")
     {
@@ -795,9 +1060,21 @@ TEST_CASE("hash.hash_to_size_t")
     {
         hash_to_size_t<sph::hash_algorithm::blake2b>();
     }
+    SUBCASE("blake3")
+    {
+        hash_to_size_t<sph::hash_algorithm::blake3>();
+    }
     SUBCASE("sha256")
     {
         hash_to_size_t<sph::hash_algorithm::sha256>();
+    }
+    SUBCASE("sha3_256")
+    {
+        hash_to_size_t<sph::hash_algorithm::sha3_256>();
+    }
+    SUBCASE("sha3_512")
+    {
+        hash_to_size_t<sph::hash_algorithm::sha3_512>();
     }
     SUBCASE("sha512")
     {
@@ -808,23 +1085,44 @@ TEST_CASE("hash.hash_to_size_t")
 TEST_CASE("hash_verify.vectors")
 {
     auto test_name{ get_current_test_name() };
-    for (auto const [index, test_vector] : std::views::enumerate(blake2b_test_vectors | std::views::filter([](auto&& x) { return x.key.empty() && x.salt.empty() && x.personal.empty(); })))
+    for (auto const [index, test_vector] : std::views::enumerate(blake2b_test_vectors))
     {
-        auto verify {test_vector.input | std::ranges::to<std::vector>() | sph::views::hash_verify<sph::hash_algorithm::blake2b>(test_vector.out) | std::ranges::to<std::vector>()};
+        auto verify { verify_test_vector<sph::hash_algorithm::blake2b>(test_vector) };
         CHECK_MESSAGE(verify.size() == 1, fmt::format("{}: failed blake on test vector {}", test_name, index));
         CHECK_MESSAGE(verify.front() == true, fmt::format("{}: failed blake on test vector {}", test_name, index));
+    }
+
+    for (auto const [index, test_vector] : std::views::enumerate(blake3_test_vectors))
+    {
+        auto verify { verify_test_vector<sph::hash_algorithm::blake3>(test_vector) };
+        CHECK_MESSAGE(verify.size() == 1, fmt::format("{}: failed blake3 on test vector {}", test_name, index));
+        CHECK_MESSAGE(verify.front() == true, fmt::format("{}: failed blake3 on test vector {}", test_name, index));
     }
 
     for (auto const [index, test_vector] : std::views::enumerate(sha256_test_vectors))
     {
-        auto verify = test_vector.input | sph::views::hash_verify<sph::hash_algorithm::sha256>(test_vector.out) | std::ranges::to<std::vector>();
+        auto verify = verify_test_vector<sph::hash_algorithm::sha256>(test_vector);
         CHECK_MESSAGE(verify.size() == 1, fmt::format("{}: failed blake on test vector {}", test_name, index));
         CHECK_MESSAGE(verify.front() == true, fmt::format("{}: failed blake on test vector {}", test_name, index));
     }
 
+    for (auto const [index, test_vector] : std::views::enumerate(sha3_256_test_vectors))
+    {
+        auto verify = verify_test_vector<sph::hash_algorithm::sha3_256>(test_vector);
+        CHECK_MESSAGE(verify.size() == 1, fmt::format("{}: failed sha3/256 on test vector {}", test_name, index));
+        CHECK_MESSAGE(verify.front() == true, fmt::format("{}: failed sha3/256 on test vector {}", test_name, index));
+    }
+
+    for (auto const [index, test_vector] : std::views::enumerate(sha3_512_test_vectors))
+    {
+        auto verify = verify_test_vector<sph::hash_algorithm::sha3_512>(test_vector);
+        CHECK_MESSAGE(verify.size() == 1, fmt::format("{}: failed sha3/512 on test vector {}", test_name, index));
+        CHECK_MESSAGE(verify.front() == true, fmt::format("{}: failed sha3/512 on test vector {}", test_name, index));
+    }
+
     for (auto const [index, test_vector] : std::views::enumerate(sha512_test_vectors))
     {
-        auto verify = test_vector.input | sph::views::hash_verify<sph::hash_algorithm::sha512>(test_vector.out) | std::ranges::to<std::vector>();
+        auto verify = verify_test_vector<sph::hash_algorithm::sha512>(test_vector);
         CHECK_MESSAGE(verify.size() == 1, fmt::format("{}: failed blake on test vector {}", test_name, index));
         CHECK_MESSAGE(verify.front() == true, fmt::format("{}: failed blake on test vector {}", test_name, index));
     }
@@ -837,9 +1135,21 @@ TEST_CASE("hash_verify.overloads.separate")
     {
         hash_verify_overloads_separate<sph::hash_algorithm::blake2b, uint8_t>();
     }
+    SUBCASE("blake3.uint8_t")
+    {
+        hash_verify_overloads_separate<sph::hash_algorithm::blake3, uint8_t>();
+    }
     SUBCASE("sha256.uint8_t")
     {
         hash_verify_overloads_separate<sph::hash_algorithm::sha256, uint8_t>();
+    }
+    SUBCASE("sha3_256.uint8_t")
+    {
+        hash_verify_overloads_separate<sph::hash_algorithm::sha3_256, uint8_t>();
+    }
+    SUBCASE("sha3_512.uint8_t")
+    {
+        hash_verify_overloads_separate<sph::hash_algorithm::sha3_512, uint8_t>();
     }
     SUBCASE("sha512.uint8_t")
     {
@@ -849,9 +1159,21 @@ TEST_CASE("hash_verify.overloads.separate")
     {
         hash_verify_overloads_separate<sph::hash_algorithm::blake2b, size_t>();
     }
+    SUBCASE("blake3.size_t")
+    {
+        hash_verify_overloads_separate<sph::hash_algorithm::blake3, size_t>();
+    }
     SUBCASE("sha256.size_t")
     {
         hash_verify_overloads_separate<sph::hash_algorithm::sha256, size_t>();
+    }
+    SUBCASE("sha3_256.size_t")
+    {
+        hash_verify_overloads_separate<sph::hash_algorithm::sha3_256, size_t>();
+    }
+    SUBCASE("sha3_512.size_t")
+    {
+        hash_verify_overloads_separate<sph::hash_algorithm::sha3_512, size_t>();
     }
     SUBCASE("sha512.size_t")
     {
@@ -864,9 +1186,21 @@ TEST_CASE("roundtrip")
     {
         hash_roundtrip_separate_types_format<sph::hash_algorithm::blake2b>();
     }
+    SUBCASE("blake3.separate")
+    {
+        hash_roundtrip_separate_types_format<sph::hash_algorithm::blake3>();
+    }
     SUBCASE("sha256.separate")
     {
         hash_roundtrip_separate_types_format<sph::hash_algorithm::sha256>();
+    }
+    SUBCASE("sha3_256.separate")
+    {
+        hash_roundtrip_separate_types_format<sph::hash_algorithm::sha3_256>();
+    }
+    SUBCASE("sha3_512.separate")
+    {
+        hash_roundtrip_separate_types_format<sph::hash_algorithm::sha3_512>();
     }
     SUBCASE("sha512.separate")
     {
@@ -876,13 +1210,343 @@ TEST_CASE("roundtrip")
     {
         hash_roundtrip_append_types_format<sph::hash_algorithm::blake2b>();
     }
+    SUBCASE("blake3.append")
+    {
+        hash_roundtrip_append_types_format<sph::hash_algorithm::blake3>();
+    }
     SUBCASE("sha256.append")
     {
         hash_roundtrip_append_types_format<sph::hash_algorithm::sha256>();
     }
+    SUBCASE("sha3_256.append")
+    {
+        hash_roundtrip_append_types_format<sph::hash_algorithm::sha3_256>();
+    }
+    SUBCASE("sha3_512.append")
+    {
+        hash_roundtrip_append_types_format<sph::hash_algorithm::sha3_512>();
+    }
     SUBCASE("sha512.append")
     {
         hash_roundtrip_append_types_format<sph::hash_algorithm::sha512>();
+    }
+}
+
+TEST_CASE("hash_verify.negative")
+{
+    std::vector<uint8_t> const input{ 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd' };
+
+    SUBCASE("blake2b.corrupted")
+    {
+        auto hash = input | sph::views::hash<sph::hash_algorithm::blake2b>(24) | std::ranges::to<std::vector>();
+        hash.front() ^= 0xFF;
+        auto verify = input | sph::views::hash_verify<sph::hash_algorithm::blake2b>(hash) | std::ranges::to<std::vector>();
+        CHECK_FALSE(verify.front());
+    }
+
+    SUBCASE("blake2b.truncated")
+    {
+        auto hash = input | sph::views::hash<sph::hash_algorithm::blake2b>(24) | std::ranges::to<std::vector>();
+        hash.pop_back();
+        auto verify = input | sph::views::hash_verify<sph::hash_algorithm::blake2b>(hash) | std::ranges::to<std::vector>();
+        CHECK_FALSE(verify.front());
+    }
+
+    SUBCASE("blake2b.extra.trailing.byte")
+    {
+        auto hash = input | sph::views::hash<sph::hash_algorithm::blake2b>(24) | std::ranges::to<std::vector>();
+        hash.push_back(0x00);
+        auto verify = input | sph::views::hash_verify<sph::hash_algorithm::blake2b>(hash) | std::ranges::to<std::vector>();
+        CHECK_FALSE(verify.front());
+    }
+
+    SUBCASE("wrong.algorithm")
+    {
+        auto hash = input | sph::views::hash<sph::hash_algorithm::sha256>(24) | std::ranges::to<std::vector>();
+        auto verify = input | sph::views::hash_verify<sph::hash_algorithm::blake2b>(hash) | std::ranges::to<std::vector>();
+        CHECK_FALSE(verify.front());
+    }
+
+    SUBCASE("append.corrupted")
+    {
+        auto appended = input
+            | sph::views::hash<sph::hash_algorithm::sha256, uint8_t, sph::hash_format::raw, sph::hash_site::append>(24)
+            | std::ranges::to<std::vector>();
+        appended.back() ^= 0xFF;
+        auto const expected_hash = input | sph::views::hash<sph::hash_algorithm::sha256>(24) | std::ranges::to<std::vector>();
+        CHECK_FALSE(std::ranges::equal(appended | std::views::drop(input.size()), expected_hash));
+    }
+}
+
+TEST_CASE("hash.boundary_values")
+{
+    std::vector<uint8_t> const empty_input{};
+    std::vector<uint8_t> const some_input{ 0x01, 0x02, 0x03 };
+
+    SUBCASE("blake2b.zero.uses.maximum")
+    {
+        auto hash = empty_input | sph::views::hash<sph::hash_algorithm::blake2b>() | std::ranges::to<std::vector>();
+        CHECK(hash.size() == sph::hash_param<sph::hash_algorithm::blake2b>::hash_byte_count());
+    }
+
+    SUBCASE("sha256.zero.uses.maximum")
+    {
+        auto hash = empty_input | sph::views::hash<sph::hash_algorithm::sha256>() | std::ranges::to<std::vector>();
+        CHECK(hash.size() == sph::hash_param<sph::hash_algorithm::sha256>::hash_byte_count());
+    }
+
+    SUBCASE("sha3_256.zero.uses.maximum")
+    {
+        auto hash = empty_input | sph::views::hash<sph::hash_algorithm::sha3_256>() | std::ranges::to<std::vector>();
+        CHECK(hash.size() == sph::hash_param<sph::hash_algorithm::sha3_256>::hash_byte_count());
+    }
+
+    SUBCASE("sha3_512.zero.uses.maximum")
+    {
+        auto hash = empty_input | sph::views::hash<sph::hash_algorithm::sha3_512>() | std::ranges::to<std::vector>();
+        CHECK(hash.size() == sph::hash_param<sph::hash_algorithm::sha3_512>::hash_byte_count());
+    }
+
+    SUBCASE("sha512.zero.uses.maximum")
+    {
+        auto hash = empty_input | sph::views::hash<sph::hash_algorithm::sha512>() | std::ranges::to<std::vector>();
+        CHECK(hash.size() == sph::hash_param<sph::hash_algorithm::sha512>::hash_byte_count());
+    }
+
+    SUBCASE("blake3.zero.uses.maximum")
+    {
+        auto hash = empty_input | sph::views::hash<sph::hash_algorithm::blake3>() | std::ranges::to<std::vector>();
+        CHECK(hash.size() == sph::hash_param<sph::hash_algorithm::blake3>::hash_byte_count());
+    }
+
+    SUBCASE("maximum.size.accepted")
+    {
+        auto hash = some_input | sph::views::hash<sph::hash_algorithm::sha256>(sph::hash_param<sph::hash_algorithm::sha256>::hash_byte_count()) | std::ranges::to<std::vector>();
+        CHECK(hash.size() == sph::hash_param<sph::hash_algorithm::sha256>::hash_byte_count());
+    }
+
+    SUBCASE("oversized.blake2b.rejected")
+    {
+        bool threw{ false };
+        try
+        {
+            auto unused = some_input | sph::views::hash<sph::hash_algorithm::blake2b>(sph::hash_param<sph::hash_algorithm::blake2b>::hash_byte_count() + 1) | std::ranges::to<std::vector>();
+            (void)unused;
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+
+    SUBCASE("oversized.sha256.rejected")
+    {
+        bool threw{ false };
+        try
+        {
+            auto unused = some_input | sph::views::hash<sph::hash_algorithm::sha256>(sph::hash_param<sph::hash_algorithm::sha256>::hash_byte_count() + 1) | std::ranges::to<std::vector>();
+            (void)unused;
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+
+    SUBCASE("oversized.sha3_256.rejected")
+    {
+        bool threw{ false };
+        try
+        {
+            auto unused = some_input | sph::views::hash<sph::hash_algorithm::sha3_256>(sph::hash_param<sph::hash_algorithm::sha3_256>::hash_byte_count() + 1) | std::ranges::to<std::vector>();
+            (void)unused;
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+
+    SUBCASE("oversized.sha3_512.rejected")
+    {
+        bool threw{ false };
+        try
+        {
+            auto unused = some_input | sph::views::hash<sph::hash_algorithm::sha3_512>(sph::hash_param<sph::hash_algorithm::sha3_512>::hash_byte_count() + 1) | std::ranges::to<std::vector>();
+            (void)unused;
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+
+    SUBCASE("oversized.sha512.rejected")
+    {
+        bool threw{ false };
+        try
+        {
+            auto unused = some_input | sph::views::hash<sph::hash_algorithm::sha512>(sph::hash_param<sph::hash_algorithm::sha512>::hash_byte_count() + 1) | std::ranges::to<std::vector>();
+            (void)unused;
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+
+    SUBCASE("oversized.blake3.rejected")
+    {
+        bool threw{ false };
+        try
+        {
+            auto unused = some_input | sph::views::hash<sph::hash_algorithm::blake3>(sph::hash_param<sph::hash_algorithm::blake3>::hash_byte_count() + 1) | std::ranges::to<std::vector>();
+            (void)unused;
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+}
+
+TEST_CASE("hash.blake2b.parameter_validation")
+{
+    std::vector<uint8_t> const input{ 0x01, 0x02, 0x03 };
+
+    SUBCASE("oversized.key.rejected")
+    {
+        std::vector<uint8_t> key(65, 0x01);
+        auto hasher = sph::views::hash<sph::hash_algorithm::blake2b>(24)
+            .with_blake2b_parameters(sph::blake2b_parameters{ .key = key });
+        bool threw{ false };
+        try
+        {
+            auto unused = input | hasher | std::ranges::to<std::vector>();
+            (void)unused;
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+
+    SUBCASE("bad.salt.size.rejected")
+    {
+        std::array<uint8_t, 15> salt{};
+        auto hasher = sph::views::hash<sph::hash_algorithm::blake2b>(24)
+            .with_blake2b_parameters(sph::blake2b_parameters{ .salt = salt });
+        bool threw{ false };
+        try
+        {
+            auto unused = input | hasher | std::ranges::to<std::vector>();
+            (void)unused;
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+
+    SUBCASE("bad.personal.size.rejected")
+    {
+        std::array<uint8_t, 15> personal{};
+        auto hasher = sph::views::hash<sph::hash_algorithm::blake2b>(24)
+            .with_blake2b_parameters(sph::blake2b_parameters{ .personal = personal });
+        bool threw{ false };
+        try
+        {
+            auto unused = input | hasher | std::ranges::to<std::vector>();
+            (void)unused;
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+}
+
+TEST_CASE("hash_verify.padding_rejection")
+{
+    std::vector<uint8_t> const input{ 'p', 'a', 'd', 'd', 'e', 'd' };
+
+    SUBCASE("sha256.missing.terminator")
+    {
+        auto padded = input | sph::views::hash<sph::hash_algorithm::sha256, size_t, sph::hash_format::padded>(24) | std::ranges::to<std::vector>();
+        auto bytes = hash_to_byte_vector(padded);
+        auto terminator = find_padding_terminator(bytes);
+        REQUIRE(terminator != bytes.end());
+        *terminator = 0x00;
+        auto corrupted = byte_vector_to_hash_vector<size_t>(bytes);
+        auto verify = input | sph::views::hash_verify<sph::hash_algorithm::sha256, sph::hash_format::padded>(corrupted) | std::ranges::to<std::vector>();
+        CHECK_FALSE(verify.front());
+    }
+
+    SUBCASE("sha512.nonzero.trailing.padding")
+    {
+        auto padded = input | sph::views::hash<sph::hash_algorithm::sha512, size_t, sph::hash_format::padded>(24) | std::ranges::to<std::vector>();
+        auto bytes = hash_to_byte_vector(padded);
+        auto terminator = find_padding_terminator(bytes);
+        REQUIRE(terminator != bytes.end());
+        REQUIRE(std::next(terminator) != bytes.end());
+        *std::next(terminator) = 0x01;
+        auto corrupted = byte_vector_to_hash_vector<size_t>(bytes);
+        auto verify = input | sph::views::hash_verify<sph::hash_algorithm::sha512, sph::hash_format::padded>(corrupted) | std::ranges::to<std::vector>();
+        CHECK_FALSE(verify.front());
+    }
+
+    SUBCASE("blake2b.appended.missing.terminator")
+    {
+        auto appended = input
+            | sph::views::hash<sph::hash_algorithm::blake2b, size_t, sph::hash_format::padded, sph::hash_site::append>(24)
+            | std::ranges::to<std::vector>();
+        auto bytes = hash_to_byte_vector(appended);
+        auto terminator = find_padding_terminator(bytes);
+        REQUIRE(terminator != bytes.end());
+        *terminator = 0x00;
+        auto corrupted = byte_vector_to_hash_vector<size_t>(bytes);
+        auto verify = corrupted | sph::views::hash_verify<sph::hash_algorithm::blake2b, sph::hash_format::padded>(24) | std::ranges::to<std::vector>();
+        CHECK_FALSE(verify.front());
+    }
+}
+
+TEST_CASE("hash.range_categories")
+{
+    std::array<uint8_t, 11> const span_payload{ { 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd' } };
+    std::vector<uint8_t> const const_payload(span_payload.begin(), span_payload.end());
+
+    SUBCASE("string_view")
+    {
+        check_range_category<sph::hash_algorithm::sha256>("string_view", [] { return std::string_view{ "hello world" }; });
+    }
+
+    SUBCASE("span")
+    {
+        check_range_category<sph::hash_algorithm::sha256>("span", [&] { return std::span<uint8_t const>{ span_payload }; });
+    }
+
+    SUBCASE("temporary.range")
+    {
+        check_range_category<sph::hash_algorithm::sha256>("temporary.range", [] { return std::vector<uint8_t>{ 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd' }; });
+    }
+
+    SUBCASE("const.range")
+    {
+        check_range_category<sph::hash_algorithm::sha256>("const.range", [&] { return std::views::all(const_payload); });
+    }
+
+    SUBCASE("single.pass.input.range")
+    {
+        check_range_category<sph::hash_algorithm::sha256>("single.pass.input.range", [] { return single_pass_byte_view{ "hello world" }; });
     }
 }
 

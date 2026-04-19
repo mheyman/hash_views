@@ -1,5 +1,15 @@
 #pragma once
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <format>
+#include <limits>
+#include <optional>
+#include <vector>
+#include <stdexcept>
+#include <tuple>
+#include <sph/hash_algorithm.h>
+#include <sph/hash_param.h>
 namespace sph::ranges::views::detail
 {
     template<typename T, sph::hash_algorithm A>
@@ -48,6 +58,22 @@ namespace sph::ranges::views::detail
         auto operator[](size_t i) const -> uint8_t { return buf_[(end_ + i + 1) % buf_.size()]; }
         auto size() const -> size_t { return buf_.size(); }
         auto done() const -> bool { return data_end_ != std::numeric_limits<size_t>::max(); }
+        auto hash(size_t target_hash_size) const -> std::vector<uint8_t>
+        {
+            if (!done())
+            {
+                throw std::runtime_error("bad call to rolling_buffer::hash(). done(target_hash_size) was not called yet.");
+            }
+
+            std::vector<uint8_t> result;
+            result.reserve(target_hash_size);
+            for (size_t position = end_ - target_hash_size; position < end_; ++position)
+            {
+                result.push_back(buf_[position % buf_.size()]);
+            }
+            return result;
+        }
+
         auto done(size_t target_hash_size) -> void
         {
             if (end_ < target_hash_size)

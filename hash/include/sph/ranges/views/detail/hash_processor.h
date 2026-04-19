@@ -1,4 +1,12 @@
 #pragma once
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <format>
+#include <memory>
+#include <ranges>
+#include <span>
+#include <stdexcept>
 #include <type_traits>
 #include <sph/hash_site.h>
 #include <sph/hash_format.h>
@@ -69,18 +77,18 @@ namespace sph::ranges::views::detail
 #endif
         bool input_complete_{ false };
     public:
-        template<bool SingleByte = single_byte>
+        template<bool SingleByte = single_byte, typename... Args>
             requires (SingleByte == true)
-        explicit hash_processor(size_t hash_size)
-            : hash_{ hash_size }
+        explicit hash_processor(size_t hash_size, Args&&... args)
+            : hash_{ hash_size, std::forward<Args>(args)... }
             , value_{}
             , value_buf_{}
             , value_buf_current_{} {
         }
-        template<bool SingleByte = single_byte>
+        template<bool SingleByte = single_byte, typename... Args>
             requires (SingleByte == false)
-        explicit hash_processor(size_t hash_size)
-            : hash_{ hash_size }
+        explicit hash_processor(size_t hash_size, Args&&... args)
+            : hash_{ hash_size, std::forward<Args>(args)... }
             , value_{}
             , value_buf_{ reinterpret_cast<uint8_t*>(&value_), sizeof(O) }
             , value_buf_current_{ value_buf_.begin() } {
