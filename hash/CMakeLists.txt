@@ -44,7 +44,7 @@ target_compile_options(
 target_compile_options(
 	${PORT_NAME}
 	INTERFACE
-		$<$<AND:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>>:/EHsc> # clang-cl defaults to no exceptions and hash_views reqauires exceptions
+		$<$<AND:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>>:/EHsc> # clang-cl defaults to no exceptions and hash_views requires exceptions
 )
 
 
