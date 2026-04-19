@@ -13,9 +13,9 @@ namespace sph::ranges::views::detail
         static constexpr size_t hash_size{ sph::hash_param<sph::hash_algorithm::sha3_512>::hash_byte_count() };
         static constexpr size_t chunk_size{ sph::hash_param<sph::hash_algorithm::sha3_512>::chunk_size() };
     private:
-        size_t hash_size_{};
         crypto_hash_sha3512_state state_;
         std::array<uint8_t, hash_size> hash_{};
+        size_t hash_size_{};
     public:
         explicit sha3_512(size_t hash_byte_count)
             : hash_size_{ hash_byte_count }
