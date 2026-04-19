@@ -1,0 +1,56 @@
+[
+  {
+    "outlen": 32,
+    "input_repeat_count": 1,
+    "out": "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532",
+    "input": "616263",
+    "key": "",
+    "salt": "",
+    "personal": ""
+  },
+  {
+    "outlen": 32,
+    "input_repeat_count": 1,
+    "out": "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a",
+    "input": "",
+    "key": "",
+    "salt": "",
+    "personal": ""
+  },
+  {
+    "outlen": 32,
+    "input_repeat_count": 1,
+    "out": "41c0dba2a9d6240849100376a8235e2c82e1b9998a999e21db32dd97496d3376",
+    "input": "6162636462636465636465666465666765666768666768696768696a68696a6b696a6b6c6a6b6c6d6b6c6d6e6c6d6e6f6d6e6f706e6f7071",
+    "key": "",
+    "salt": "",
+    "personal": ""
+  },
+  {
+    "outlen": 32,
+    "input_repeat_count": 1,
+    "out": "916f6061fe879741ca6469b43971dfdb28b1a32dc36cb3254e812be27aad1d18",
+    "input": "61626364656667686263646566676869636465666768696a6465666768696a6b65666768696a6b6c666768696a6b6c6d6768696a6b6c6d6e68696a6b6c6d6e6f696a6b6c6d6e6f706a6b6c6d6e6f70716b6c6d6e6f7071726c6d6e6f707172736d6e6f70717273746e6f707172737475",
+    "key": "",
+    "salt": "",
+    "personal": ""
+  },
+  {
+    "outlen": 32,
+    "input_repeat_count": 1000000,
+    "out": "5c8875ae474a3634ba4fd55ec85bffd661f32aca75c6d699d0cdcb6c115891c1",
+    "input": "61",
+    "key": "",
+    "salt": "",
+    "personal": ""
+  },
+  {
+    "outlen": 32,
+    "input_repeat_count": 16777216,
+    "out": "ecbbc42cbf296603acb2c6bc0410ef4378bafb24b710357f12df607758b33e2b",
+    "input": "61626364656667686263646566676869636465666768696a6465666768696a6b65666768696a6b6c666768696a6b6c6d6768696a6b6c6d6e68696a6b6c6d6e6f",
+    "key": "",
+    "salt": "",
+    "personal": ""
+  }
+]

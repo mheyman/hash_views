@@ -1,6 +1,17 @@
 #pragma once
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <optional>
 #include <ranges>
+#include <string>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <vector>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+#include <sph/blake2b_parameters.h>
 #include <sph/hash_algorithm.h>
 #include <sph/hash_site.h>
 #include <sph/hash_format.h>
@@ -157,11 +168,18 @@ namespace sph::ranges::views::detail
     {
         bool verify_ok_{ false };
 
+        using algorithm_parameters_t = sph::ranges::views::detail::algorithm_parameters_t<A>;
         using input_type = std::remove_cvref_t<std::ranges::range_value_t<R>>;
         using input_append_iterator = detail::hash_iterator<R, input_type, A, F, sph::hash_site::append, end_of_input::skip_appended_hash>;
         using input_append_sentinel = detail::hash_sentinel<R, input_type, A, F, sph::hash_site::append, end_of_input::skip_appended_hash>;
         using input_separate_iterator = detail::hash_iterator<R, T, A, F, sph::hash_site::separate, end_of_input::no_appended_hash>;
         using input_separate_sentinel = detail::hash_sentinel<R, T, A, F, sph::hash_site::separate, end_of_input::no_appended_hash>;
+        struct hash_bytes
+        {
+            std::vector<uint8_t> bytes;
+            size_t target_hash_size;
+            bool valid_padding;
+        };
     public:
         using iterator = single_bool_iterator;
         using sentinel = single_bool_sentinel;
@@ -181,6 +199,12 @@ namespace sph::ranges::views::detail
             : verify_ok_{verify(std::forward<R>(input), std::forward<H>(hash))}
         {}
 
+        template<hash_range H>
+        hash_verify_view(R&& input, H&& hash, algorithm_parameters_t algorithm_parameters)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+            requires (A == sph::hash_algorithm::blake2b)
+            : verify_ok_{verify(std::forward<R>(input), std::forward<H>(hash), algorithm_parameters)}
+        {}
+
         /**
          * Initialize a new instance of the hash_verify_view class.
          *
@@ -194,6 +218,11 @@ namespace sph::ranges::views::detail
          */
         hash_verify_view(size_t target_hash_size, R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
             : verify_ok_ { verify(target_hash_size, std::forward<R>(input)) }
+        {}
+
+        hash_verify_view(size_t target_hash_size, R&& input, algorithm_parameters_t algorithm_parameters)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+            requires (A == sph::hash_algorithm::blake2b)
+            : verify_ok_ { verify(target_hash_size, std::forward<R>(input), algorithm_parameters) }
         {}
 
         hash_verify_view(hash_verify_view const&) = default;
@@ -216,24 +245,26 @@ namespace sph::ranges::views::detail
          * @param maybe_padded_hash the hash to check.
          * @return the unpadded length of the hash.
          */
-        static auto maybe_unpadded_length(std::vector<uint8_t> const& maybe_padded_hash) -> size_t
+        static auto maybe_unpadded_length(std::vector<uint8_t> const& maybe_padded_hash) -> std::pair<size_t, bool>
         {
             if constexpr (F == sph::hash_format::raw)
             {
-                return maybe_padded_hash.size();
+                return { maybe_padded_hash.size(), true };
             }
             else
             {
-                // Requires that maybe_padded_hash is actually padded to work -
-                // that is, it contains a 0x80 byte followed by zero or more
-                // 0x00 bytes.
-                // 
-                // What this really does is find the distance to the last 0x80
-                // byte from the beginning of the vector.
-                return static_cast<size_t>(
-                    std::max(
-                        static_cast<ptrdiff_t>(0), 
-                        (std::distance(std::ranges::find(std::ranges::reverse_view(maybe_padded_hash), 0x80), maybe_padded_hash.rend()) - 1)));
+                size_t current{ maybe_padded_hash.size() };
+                while (current > 0 && maybe_padded_hash[current - 1] == 0x00)
+                {
+                    --current;
+                }
+
+                if (current == 0 || maybe_padded_hash[current - 1] != 0x80)
+                {
+                    return { 0, false };
+                }
+
+                return { current - 1, true };
             }
         }
 
@@ -241,7 +272,7 @@ namespace sph::ranges::views::detail
          * Convert hash into a vector of uint8_t.
          */
         template<hash_verify_single_byte_range H>
-        static constexpr auto hash_to_byte_vector(H&& hash) -> std::tuple<std::vector<uint8_t>, size_t>
+        static constexpr auto hash_to_byte_vector(H&& hash) -> hash_bytes
         {
             using value_t = std::remove_cvref_t<std::ranges::range_value_t<H>>;
             auto ret {std::forward<H>(hash)
@@ -250,11 +281,12 @@ namespace sph::ranges::views::detail
                     return static_cast<uint8_t>(v);
                 })
                 | std::ranges::to<std::vector>()};
-                return { ret, maybe_unpadded_length(ret) };
+            auto [target_hash_size, valid_padding]{ maybe_unpadded_length(ret) };
+            return { std::move(ret), target_hash_size, valid_padding };
         }
 
         template<hash_verify_multi_byte_range H>
-        static constexpr auto hash_to_byte_vector(H&& hash) -> std::tuple<std::vector<uint8_t>, size_t>
+        static constexpr auto hash_to_byte_vector(H&& hash) -> hash_bytes
         {
             using value_t = std::remove_cvref_t<std::ranges::range_value_t<H>>;
             auto ret {std::forward<H>(hash)
@@ -266,19 +298,54 @@ namespace sph::ranges::views::detail
                 })
                 | std::views::join
                 | std::ranges::to<std::vector>()};
-            return { ret, maybe_unpadded_length(ret) };
+            auto [target_hash_size, valid_padding]{ maybe_unpadded_length(ret) };
+            return { std::move(ret), target_hash_size, valid_padding };
         }
 
         template<hash_range H>
         static auto verify(R&& input, H&& hash) -> bool
         {
-            auto [provided_hash, target_hash_size]{ hash_to_byte_vector(std::forward<H>(hash)) };
+            return verify(std::forward<R>(input), std::forward<H>(hash), algorithm_parameters_t{});
+        }
+
+        template<hash_range H>
+        static auto verify(R&& input, H&& hash, algorithm_parameters_t algorithm_parameters) -> bool
+        {
+            auto provided_hash_data{ hash_to_byte_vector(std::forward<H>(hash)) };
+            auto const& provided_hash{ provided_hash_data.bytes };
+            auto const target_hash_size{ provided_hash_data.target_hash_size };
+            if (!provided_hash_data.valid_padding)
+            {
+                return false;
+            }
+
             R to_hash{ std::move(input) };
-            auto [hash_result, result_hash_size]
-            { 
-                hash_to_byte_vector(
-                    std::ranges::subrange(input_separate_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size), input_separate_sentinel{}))
+            auto hash_result_data{
+                [&]() -> hash_bytes
+                {
+                    if constexpr (A == sph::hash_algorithm::blake2b)
+                    {
+                        return hash_to_byte_vector(
+                            std::ranges::subrange(
+                                input_separate_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size, algorithm_parameters),
+                                input_separate_sentinel{}));
+                    }
+                    else
+                    {
+                        return hash_to_byte_vector(
+                            std::ranges::subrange(
+                                input_separate_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size),
+                                input_separate_sentinel{}));
+                    }
+                }()
             };
+            auto const& hash_result{ hash_result_data.bytes };
+            auto const result_hash_size{ hash_result_data.target_hash_size };
+            if (!hash_result_data.valid_padding)
+            {
+                return false;
+            }
+
             if (provided_hash.size() != hash_result.size())
             {
                 fmt::print("H size mismatch: expected {} bytes, calculated {} bytes.\n  expected {},\n       got {}\n",
@@ -321,19 +388,89 @@ namespace sph::ranges::views::detail
 
         static auto verify(size_t target_hash_size, R&& input) -> bool
         {
+            return verify(target_hash_size, std::forward<R>(input), algorithm_parameters_t{});
+        }
+
+        static auto verify(size_t target_hash_size, R&& input, algorithm_parameters_t algorithm_parameters) -> bool
+        {
             R to_hash{ std::move(input) };
-            auto hasher { input_append_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size) };
-            auto  [hash_result, hash_result_size]{ hash_to_byte_vector(std::ranges::subrange(hasher, input_append_sentinel{})) };
-            auto [appended_hash, appended_hash_size] { hash_to_byte_vector(hasher.hash()) }; // available after iteration complete
-            if (appended_hash.size() != hash_result.size())
+            auto hasher {
+                [&]() -> input_append_iterator
+                {
+                    if constexpr (A == sph::hash_algorithm::blake2b)
+                    {
+                        return input_append_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size, algorithm_parameters);
+                    }
+                    else
+                    {
+                        return input_append_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size);
+                    }
+                }()
+            };
+            std::vector<input_type> unhashed_input{};
+            for (; hasher != input_append_sentinel{}; ++hasher)
+            {
+                unhashed_input.push_back(*hasher);
+            }
+
+            auto appended_hash_data{ hash_to_byte_vector(hasher.appended_hash()) };
+            auto const& appended_hash{ appended_hash_data.bytes };
+            auto const appended_hash_size{ appended_hash_data.target_hash_size };
+            if (!appended_hash_data.valid_padding)
             {
                 return false;
             }
 
-            return std::ranges::all_of(std::views::zip(appended_hash, hash_result), [](auto&& pair)
+            auto hash_result_data{
+                [&]() -> hash_bytes
+                {
+                    if constexpr (A == sph::hash_algorithm::blake2b)
+                    {
+                        auto hash_fn{
+                            sph::views::hash<A, uint8_t, F>(target_hash_size)
+                            .with_blake2b_parameters(algorithm_parameters)
+                        };
+                        return hash_to_byte_vector(unhashed_input | hash_fn);
+                    }
+                    else
+                    {
+                        return hash_to_byte_vector(unhashed_input | sph::views::hash<A, uint8_t, F>(target_hash_size));
+                    }
+                }()
+            };
+            auto const& hash_result{ hash_result_data.bytes };
+            auto const hash_result_size{ hash_result_data.target_hash_size };
+            if (!hash_result_data.valid_padding)
+            {
+                return false;
+            }
+
+            if (appended_hash_size != hash_result_size)
+            {
+                fmt::print("Appended H target size mismatch: expected {} bytes, calculated {} bytes.\n  expected {},\n       got {}\n",
+                    appended_hash_size,
+                    hash_result_size,
+                    fmt::join(appended_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
+                    fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "));
+                return false;
+            }
+
+            bool const ret{
+                std::ranges::all_of(
+                    std::views::zip(
+                        appended_hash | std::views::take(appended_hash_size),
+                        hash_result | std::views::take(hash_result_size)),
+                    [](auto&& pair)
             {
                 return std::get<0>(pair) == std::get<1>(pair);
-            });
+            }) };
+            if (!ret)
+            {
+                fmt::print("Appended H mismatch: provided hash does not match computed hash: provided: {}, calculated: {}.\n",
+                    fmt::join(appended_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
+                    fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "));
+            }
+            return ret;
         }
     };
 
@@ -353,10 +490,12 @@ namespace sph::ranges::views::detail
         static constexpr bool appended_hash{ std::is_same_v<H, std::nullopt_t> };
         using hash_t = std::conditional_t<appended_hash, hash_verify_empty, H>;
         using target_hash_size_t = std::conditional_t<appended_hash, size_t, hash_verify_empty>;
+        using algorithm_parameters_t = sph::ranges::views::detail::algorithm_parameters_t<A>;
         static constexpr hash_format hf{ hash_verify_format<F, hash_t>::value };
         static constexpr hash_algorithm ha{ A };
         hash_t hash_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
         target_hash_size_t  target_hash_size_;
+        algorithm_parameters_t algorithm_parameters_{};
 
     public:
         explicit hash_verify_fn(size_t target_hash_size = 0) : target_hash_size_{target_hash_size} {}
@@ -364,13 +503,29 @@ namespace sph::ranges::views::detail
         explicit hash_verify_fn(H&& hash)
             : hash_{std::forward<H>(hash)} {}
 
+        [[nodiscard]] auto with_blake2b_parameters(sph::blake2b_parameters parameters) const -> hash_verify_fn
+            requires (A == sph::hash_algorithm::blake2b)
+        {
+            auto result{ *this };
+            result.algorithm_parameters_ = parameters;
+            return result;
+        }
+
         template <hash_range R>
         [[nodiscard]] constexpr auto operator()(R&& range) const
             -> hash_verify_view< std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>
             requires (appended_hash)
         {
-            return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>(
-                target_hash_size_, std::views::all(std::forward<R>(range)));
+            if constexpr (A == sph::hash_algorithm::blake2b)
+            {
+                return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>(
+                    target_hash_size_, std::views::all(std::forward<R>(range)), algorithm_parameters_);
+            }
+            else
+            {
+                return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>(
+                    target_hash_size_, std::views::all(std::forward<R>(range)));
+            }
         }
 
         template <hash_range R>
@@ -378,8 +533,16 @@ namespace sph::ranges::views::detail
             -> hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>
             requires (!appended_hash)
         {
-            return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>(
-                std::views::all(std::forward<R>(range)), std::views::all(hash_));
+            if constexpr (A == sph::hash_algorithm::blake2b)
+            {
+                return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>(
+                    std::views::all(std::forward<R>(range)), std::views::all(hash_), algorithm_parameters_);
+            }
+            else
+            {
+                return hash_verify_view<std::views::all_t<R>, hash_verify_output<R, hash_t>, ha, hf>(
+                    std::views::all(std::forward<R>(range)), std::views::all(hash_));
+            }
         }
 
         template <hash_range R>
@@ -488,4 +651,3 @@ namespace sph::views
     }
 
 }
-

@@ -1,6 +1,13 @@
 #pragma once
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <format>
+#include <iterator>
 #include <ranges>
+#include <span>
+#include <stdexcept>
+#include <utility>
 #include <sph/ranges/views/detail/process_util.h>
 
 namespace sph::ranges::views::detail::concat
@@ -165,8 +172,9 @@ namespace sph::ranges::views::detail
         size_t target_hash_size_;
         std::array<uint8_t, sizeof(O)> pad_buffer_{ create_pad_array() };
     public:
-        padded_hash(size_t hash_size)
-            : hash_{ hash_size }
+        template <typename... Args>
+        explicit padded_hash(size_t hash_size, Args&&... args)
+            : hash_{ hash_size, std::forward<Args>(args)... }
             , target_hash_size_ {hash_.target_hash_size() + 1}
         {
         }

@@ -6,6 +6,7 @@ include (GNUInstallDirs)
 include (CMakePackageConfigHelpers)
 
 find_package(unofficial-sodium CONFIG REQUIRED)
+find_package(blake3 CONFIG REQUIRED)
 set(PORT_NAME sph-hash)
 
 # Add source to this project's executable.
@@ -54,7 +55,7 @@ target_include_directories(
 		$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-target_link_libraries(${PORT_NAME} INTERFACE unofficial-sodium::sodium)
+target_link_libraries(${PORT_NAME} INTERFACE unofficial-sodium::sodium BLAKE3::blake3)
 
 set (CONFIG_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PORT_NAME}")
 

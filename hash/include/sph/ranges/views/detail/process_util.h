@@ -1,4 +1,9 @@
 #pragma once
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <ranges>
+#include <span>
 #include <tuple>
 #include <type_traits>
 

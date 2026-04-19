@@ -1,4 +1,7 @@
 #pragma once
+#include <cstddef>
+#include <format>
+#include <stdexcept>
 #include <sph/hash_param.h>
 namespace sph::ranges::views::detail
 {

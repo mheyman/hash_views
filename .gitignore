@@ -36,3 +36,7 @@ out
 .vs/*
 !.vs/launch.vs.json
 *.*~
+
+# codex artifacts
+.codex
+.history
