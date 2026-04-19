@@ -9,8 +9,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include <fmt/format.h>
-#include <fmt/ranges.h>
 #include <sph/blake2b_parameters.h>
 #include <sph/hash_algorithm.h>
 #include <sph/hash_site.h>
@@ -348,42 +346,18 @@ namespace sph::ranges::views::detail
 
             if (provided_hash.size() != hash_result.size())
             {
-                fmt::print("H size mismatch: expected {} bytes, calculated {} bytes.\n  expected {},\n       got {}\n",
-                    provided_hash.size(),
-                    hash_result.size(),
-                    fmt::join(provided_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
-                    fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "));
-                hash_to_byte_vector(
-                    std::ranges::subrange(input_separate_iterator(std::ranges::begin(to_hash), std::ranges::end(to_hash), target_hash_size), input_separate_sentinel{}));
-                    return false;
+                return false;
             }
 
             if (target_hash_size != result_hash_size)
             {
-                fmt::print("H target size mismatch: expected {} bytes, calculated {} bytes.\n  expected {},\n       got {}\n",
-                    target_hash_size,
-                    result_hash_size,
-                    fmt::join(provided_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
-                    fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "));
                 return false;
             }
 
-            bool const ret{ std::ranges::all_of(std::views::zip(provided_hash | std::views::take(target_hash_size), hash_result | std::views::take(target_hash_size)), [](auto&& pair)
+            return { std::ranges::all_of(std::views::zip(provided_hash | std::views::take(target_hash_size), hash_result | std::views::take(target_hash_size)), [](auto&& pair)
             {
                 return std::get<0>(pair) == std::get<1>(pair);
             })};
-            if constexpr (sizeof(std::remove_cvref_t<std::ranges::range_value_t<H>>) == 1)
-            {
-                if (!ret)
-                {
-                    fmt::print("H mismatch: provided hash does not match computed hash: provided: {}, calculated: {}.\n",
-                               fmt::join(provided_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
-                               fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " ")
-                    );
-                }
-            }
-
-            return ret;
         }
 
         static auto verify(size_t target_hash_size, R&& input) -> bool
@@ -447,11 +421,6 @@ namespace sph::ranges::views::detail
 
             if (appended_hash_size != hash_result_size)
             {
-                fmt::print("Appended H target size mismatch: expected {} bytes, calculated {} bytes.\n  expected {},\n       got {}\n",
-                    appended_hash_size,
-                    hash_result_size,
-                    fmt::join(appended_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
-                    fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "));
                 return false;
             }
 
@@ -464,12 +433,6 @@ namespace sph::ranges::views::detail
             {
                 return std::get<0>(pair) == std::get<1>(pair);
             }) };
-            if (!ret)
-            {
-                fmt::print("Appended H mismatch: provided hash does not match computed hash: provided: {}, calculated: {}.\n",
-                    fmt::join(appended_hash | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "),
-                    fmt::join(hash_result | std::views::transform([](auto x) -> std::string { return fmt::format("{:02X}", static_cast<uint8_t>(x)); }), " "));
-            }
             return ret;
         }
     };

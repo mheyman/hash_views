@@ -40,3 +40,6 @@ out
 # codex artifacts
 .codex
 .history
+
+.vs/*
+!.vs/ProjectSettings.json
